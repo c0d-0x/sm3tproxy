@@ -15,4 +15,4 @@ This is liable to change, keep your hopes down.
 - [ ] Logging of requests, headers, and payloads.
 - [ ] Rule-based traffic filtering (domain, keyword, method) with cli/ a config file.
 - [ ] Optional HTTPS interception using OpenSSL.
-- [ ] Lua scripting support for dynamic filtering rules (This is very Optional).
+- [ ] Lua scripting support for dynamic filtering rules (This is very OPTIONAL).
