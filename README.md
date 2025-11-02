@@ -9,9 +9,8 @@ A lightweight programmable proxy server.
 
 ## Roadmap
 
-This is liable to change, keep your hopes down.
-
 - [ ] Transparent TCP proxy.
+- [ ] Event driven processing with epoll.
 - [ ] HTTP request and response parsing.
 - [ ] Logging of requests, headers, and payloads.
 - [ ] Rule-based traffic filtering (domain, keyword, method) with cli/ a config file.

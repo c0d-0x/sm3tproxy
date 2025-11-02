@@ -15,10 +15,18 @@
 #define BACKLOG 10
 #define BUFFER_SIZE 1024
 
+#define MAX_EVENT 5
+
 typedef struct {
     int fd;
+    int n;
     char buffer[];
 } Client;
+
+typedef struct {
+    Client *client;
+    Client *server;
+} Conn;
 
 typedef enum {
     SP_OK = 0,
@@ -27,7 +35,7 @@ typedef enum {
     SP_ERR_PROTOCOL = -3
 } SP_STATUS;
 
-static int init_server(char *port);
 void run_server(char *port);
-void *connection_handler(void *client);
+void connection_handler(Conn *conn);
+bool set_nonblocking(int fd);
 #endif  // !PROXY_H

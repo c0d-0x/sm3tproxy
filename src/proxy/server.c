@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <pthread.h>
@@ -11,9 +12,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+bool set_nonblocking(int fd) {
+    int flags = 0;
+    if ((flags = fcntl(fd, F_GETFL, 0)) == SP_ERR) {
+        fprintf(stderr, "Error: Failed to get fd flags: %s\n", strerror(errno));
+        return false;
+    }
+
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
+        fprintf(stderr, "Error: Failed to set fd to non-blocking: %s\n", strerror(errno));
+        return false;
+    }
+
+    return true;
+}
 
 int init_server(char *port) {
     struct addrinfo *host = nullptr;
@@ -48,6 +65,7 @@ int init_server(char *port) {
         return SP_ERR;
     }
 
+    if (!set_nonblocking(sock_fd)) return SP_ERR;
     if (listen(sock_fd, BACKLOG) == SP_ERR) {
         fprintf(stderr, "Error: Failed to listen: %s\n", strerror(errno));
         freeaddrinfo(host);
@@ -58,61 +76,112 @@ int init_server(char *port) {
     return sock_fd;
 }
 
-static void free_client(Client *client) {
+static void close_client(Client *client) {
     if (client != nullptr) {
         close(client->fd);
         free(client);
     }
 }
 
-void *connection_handler(void *arg) {
-    assert(arg != nullptr);
+// An echo server for now!
+void connection_handler(Conn *conn) {
+    assert(conn != nullptr);
+
     int n = 0;
-    Client *client = (Client *) arg;
-
-    fprintf(stderr, "Info: Received connection\n");
-    char buf[] = "Welcome bruh!!!\n";
-    send(client->fd, buf, sizeof(buf), 0);
-
-    while (true) {
-        if ((n = recv(client->fd, client->buffer, BUFFER_SIZE, 0)) == 0) {
-            fprintf(stderr, "Info: connection closed\n");
-            break;
-        }
-
-        client->buffer[n] = '\0';
-        fprintf(stdout, "MSG: %s\n", client->buffer);
-        if ((n = send(client->fd, client->buffer, n, 0)) == 0) {
-            fprintf(stderr, "Info: connection closed\n");
-            break;
-        }
+    if ((conn->client->n = recv(conn->client->fd, conn->client->buffer, BUFFER_SIZE, 0)) == 0) {
+        fprintf(stderr, "Info: connection closed\n");
+        close_client(conn->client);
+        free(conn);
+        return;
     }
 
-    free_client(client);
-    return nullptr;
+    n = conn->client->n;
+    conn->client->buffer[n] = '\0';
+    fprintf(stdout, "MSG: %s\n", conn->client->buffer);
+    if ((n = send(conn->client->fd, conn->client->buffer, n, 0)) == 0) {
+        fprintf(stderr, "Info: Connection a closed\n");
+        close_client(conn->client);
+        free(conn);
+        return;
+    }
+    return;
 }
 
 void run_server(char *port) {
     if (port == nullptr) port = DEFAULT_PORT;
+    int proxy_server = init_server(port);
 
-    int server = init_server(port);
-    Client *client = nullptr;
+    int epoll_fd = 0;
+    struct epoll_event ev = {};
+    ev.events = EPOLLIN;
+    ev.data.fd = proxy_server;
+    if ((epoll_fd = epoll_create(BACKLOG)) == SP_ERR) {
+        fprintf(stderr, "Error: Failed to create an epoll instance\n");
+        close(proxy_server);
+        return;
+    }
 
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, proxy_server, &ev) == SP_ERR) {
+        fprintf(stderr, "Error: Failed to add fd to epoll list\n");
+        close(proxy_server);
+        close(epoll_fd);
+        return;
+    }
+
+    int n = 0;
+    struct epoll_event ev_list[MAX_EVENT];
     while (true) {
-        if ((client = calloc(1, sizeof(Client) + BUFFER_SIZE + 1)) == nullptr) {
-            fprintf(stderr, "Error: Failed to allocate memory\n");
-            close(server);
+        if ((n = epoll_wait(epoll_fd, ev_list, MAX_EVENT, -1)) == SP_ERR) {
+            fprintf(stderr, "Error: Failed to wait for epoll events\n");
+            close(proxy_server);
+            close(epoll_fd);
             return;
         }
 
-        if ((client->fd = accept(server, nullptr, nullptr)) == SP_ERR) {
-            fprintf(stderr, "Error: Failed to accept connection: %s\n", strerror(errno));
-            free(client);
-            continue;
-        }
+        for (int i = 0; i < n; i++) {
+            if (ev_list[i].data.fd == proxy_server) {
+                fprintf(stderr, "Info: Accepting new incoming connection\n");
+                Conn *conn = calloc(1, sizeof(Conn));
+                if (conn == nullptr) {
+                    fprintf(stderr, "Error: Failed to allocate memory\n");
+                    return;
+                }
 
-        pthread_t thread;
-        pthread_create(&thread, nullptr, connection_handler, (void *) client);
-        pthread_detach(thread);
+                if ((conn->client = calloc(1, sizeof(Client) + BUFFER_SIZE + 1)) == nullptr) {
+                    fprintf(stderr, "Error: Failed to allocate memory\n");
+                    close(proxy_server);
+                    free(conn);
+                    return;
+                }
+
+                if ((conn->client->fd = accept(proxy_server, nullptr, nullptr)) == SP_ERR) {
+                    fprintf(stderr, "Error: Failed to accept connection: %s\n", strerror(errno));
+                    close_client(conn->client);
+                    free(conn);
+                    continue;
+                }
+
+                if (!set_nonblocking(conn->client->fd)) return;
+                // if ((conn->server = calloc(1, sizeof(Client) + BUFFER_SIZE + 1)) == nullptr) {
+                //     fprintf(stderr, "Error: Failed to allocate memory\n");
+                //     close(proxy_server);
+                //     free_client(conn->client);
+                //     free(conn);
+                //     return;
+                // }
+
+                ev.data.ptr = conn;
+                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn->client->fd, &ev) == SP_ERR) {
+                    fprintf(stderr, "Error: Failed to add fd to epoll list\n");
+                    close(proxy_server);
+                    close(epoll_fd);
+                    return;
+                }
+
+            } else {
+                Conn *conn = ev_list[i].data.ptr;
+                connection_handler(conn);
+            }
+        }
     }
 }
