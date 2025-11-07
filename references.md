@@ -3,6 +3,7 @@
 - https://beej.us/guide/bgnet/
 - https://dev.to/trish_07/building-a-simple-tcp-server-in-c-2h85
 - https://isbobby.github.io/3-network/tcp/2-tcp_server_in_c.html
+- https://robertheaton.com/2018/08/31/how-to-build-a-tcp-proxy-1/
 
 ## Lua integration
 

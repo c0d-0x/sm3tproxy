@@ -14,6 +14,7 @@ ALL_SRC        := $(SRC) $(PROXY_SRC) $(CLI_SRC)
 OBJ            := $(ALL_SRC:src/%.c=build/%.o)
 
 BIN            := bin/sm3tproxy
+BIN_DIR		   :=bin
 
 
 all: $(BIN)
@@ -30,6 +31,6 @@ build/%.o: src/%.c
 .PHONY:  test all clean install uninstall
 
 clean:
-	@rm -rf build $(BIN)
-	@echo "Clean up complete..."
+	@echo "Cleaning up build files"
+	@rm -rf build $(BIN_DIR)
 

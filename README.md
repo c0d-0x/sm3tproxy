@@ -1,16 +1,16 @@
 # sm3tproxy
 
-A lightweight programmable proxy server.
+A lightweight programmable TCP proxy server.
 
 > [!NOTE]
-> This is a skeleton for now and the idea is still rusty ;)
+> This is more a skeleton and not usable yet ;)
 
 > This project is experimental, created to explore my understanding of network programming.
 
 ## Roadmap
 
-- [ ] Transparent TCP proxy.
 - [ ] Event driven processing with epoll.
+- [ ] Transparent TCP proxy.
 - [ ] HTTP request and response parsing.
 - [ ] Logging of requests, headers, and payloads.
 - [ ] Rule-based traffic filtering (domain, keyword, method) with cli/ a config file.
