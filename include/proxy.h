@@ -25,7 +25,7 @@ typedef struct {
     int fd;
     int n;
     char buffer[];
-} Client;
+} Node;
 
 typedef enum {
     CLIENT,
@@ -33,8 +33,8 @@ typedef enum {
 } Active;
 
 typedef struct {
-    Client *client;
-    Client *server;
+    Node *client;
+    Node *server;
 } Conn;
 
 typedef struct {
@@ -49,7 +49,6 @@ typedef enum {
     SP_ERR_PROTOCOL = -3
 } Status;
 
-void run_server(char *port);
-void connection_handler(Conn *conn);
-bool set_nonblocking(int fd);
+void sm3t__run_server(char *port);
+bool sm3t__set_nonblocking(int fd);
 #endif  // !PROXY_H

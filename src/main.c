@@ -6,6 +6,6 @@
 
 int main(int argc, char *argv[]) {
     printf("SM3TPROXY ON PORT: %s\n", DEFAULT_PORT);
-    run_server(nullptr);
+    sm3t__run_server(nullptr);
     return EXIT_SUCCESS;
 }

@@ -18,7 +18,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-bool set_nonblocking(int fd) {
+bool sm3t__set_nonblocking(int fd) {
     int flags = 0;
     if ((flags = fcntl(fd, F_GETFL, 0)) == SP_ERR) {
         fprintf(stderr, "ERROR: Failed to get fd flags: %s\n", strerror(errno));
@@ -33,7 +33,7 @@ bool set_nonblocking(int fd) {
     return true;
 }
 
-int init_server(char *port) {
+int sm3t__init_server(char *port) {
     struct addrinfo *host = nullptr;
     struct addrinfo hint = {};
     int sock_fd;
@@ -65,7 +65,11 @@ int init_server(char *port) {
         return SP_ERR;
     }
 
-    if (!set_nonblocking(sock_fd)) return SP_ERR;
+    if (!sm3t__set_nonblocking(sock_fd)) {
+        freeaddrinfo(host);
+        return SP_ERR;
+    }
+
     if (listen(sock_fd, BACKLOG) == SP_ERR) {
         fprintf(stderr, "ERROR: Failed to listen: %s\n", strerror(errno));
         freeaddrinfo(host);
@@ -76,25 +80,39 @@ int init_server(char *port) {
     return sock_fd;
 }
 
-static void close_client(Client *client) {
-    if (client != nullptr) {
-        close(client->fd);
-        free(client);
+void *sm3t__new_node(void) {
+    Node *node = nullptr;
+    if ((node = calloc(1, sizeof(Node) + BUFFER_SIZE + 1)) == nullptr) {
+        fprintf(stderr, "ERROR: Failed to allocate memory\n");
+        return nullptr;
+    }
+    return node;
+}
+
+static void close_node(Node *node) {
+    if (node != nullptr) {
+        close(node->fd);
+        free(node);
     }
 }
 
 static void cleanup_conn(Conn *conn) {
-    close_client(conn->client);
-    close_client(conn->server);
+    close_node(conn->client);
+    close_node(conn->server);
     free(conn);
     conn = nullptr;
 }
 
 static int connect_to_server(struct sockaddr_in *server_addr, socklen_t addr_len) {
     char ip[INET_ADDRSTRLEN];
+    int server_sock = SP_ERR;
     inet_ntop(AF_INET, (const void *) &server_addr->sin_addr, ip, sizeof(ip));
 
-    int server_sock = SP_ERR;
+    if ((server_sock = socket(AF_INET, SOCK_STREAM, 0)) == SP_ERR) {
+        fprintf(stderr, "ERROR: Failed to create sever socket: %s", strerror(errno));
+        return SP_ERR;
+    }
+
     if (connect(server_sock, server_addr, addr_len) == SP_ERR) {
         fprintf(stderr, "ERROR: Failed to connect to sever: %s:%d\n", ip, ntohs(server_addr->sin_port));
         fprintf(stderr, "ERROR: %s\n", strerror(errno));
@@ -105,7 +123,7 @@ static int connect_to_server(struct sockaddr_in *server_addr, socklen_t addr_len
     return server_sock;
 }
 
-bool handle_context(Context *ctx) {
+static bool handle_context(Context *ctx) {
     int n = SP_ERR;
     Conn *conn = ctx->conn;
     if (ctx->active == SERVER) {
@@ -159,6 +177,7 @@ bool handle_context(Context *ctx) {
             cleanup_conn(conn);
             return false;
         }
+
         if (n != conn->client->n) {
             fprintf(stderr, "INFO: Under send to server\n");
             return false;
@@ -167,8 +186,8 @@ bool handle_context(Context *ctx) {
 
     return true;
 }
-// An echo server for now!
-void echo_engine(Conn *conn) {
+
+static void echo_engine(Conn *conn) {
     assert(conn != nullptr);
 
     int n = 0;
@@ -189,9 +208,17 @@ void echo_engine(Conn *conn) {
     return;
 }
 
-void run_server(char *port) {
+static bool append_poll(int epoll_fd, int fd, struct epoll_event *ev) {
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, ev) == SP_ERR) {
+        fprintf(stderr, "ERROR: Failed to add fd to epoll list\n");
+        return false;
+    }
+    return true;
+}
+
+void sm3t__run_server(char *port) {
     if (port == nullptr) port = DEFAULT_PORT;
-    int proxy_server = init_server(port);
+    int proxy_server = sm3t__init_server(port);
 
     int epoll_fd = 0;
     struct epoll_event ev = {};
@@ -203,8 +230,7 @@ void run_server(char *port) {
         return;
     }
 
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, proxy_server, &ev) == SP_ERR) {
-        fprintf(stderr, "ERROR: Failed to add fd to epoll list\n");
+    if (!append_poll(epoll_fd, proxy_server, &ev)) {
         close(proxy_server);
         close(epoll_fd);
         return;
@@ -227,26 +253,29 @@ void run_server(char *port) {
                 if (conn == nullptr) {
                     fprintf(stderr, "ERROR: Failed to allocate memory\n");
                     close(proxy_server);
+                    close(epoll_fd);
                     return;
                 }
 
-                if ((conn->client = calloc(1, sizeof(Client) + BUFFER_SIZE + 1)) == nullptr) {
-                    fprintf(stderr, "ERROR: Failed to allocate memory\n");
-                    close(proxy_server);
+                if ((conn->client = sm3t__new_node()) == nullptr) {
                     cleanup_conn(conn);
+                    close(proxy_server);
+                    close(epoll_fd);
                     return;
                 }
 
                 if ((conn->client->fd = accept(proxy_server, nullptr, nullptr)) == SP_ERR) {
                     fprintf(stderr, "ERROR: Failed to accept connection: %s\n", strerror(errno));
-                    close(proxy_server);
                     cleanup_conn(conn);
+                    close(proxy_server);
+                    close(epoll_fd);
                     continue;
                 }
 
-                if (!set_nonblocking(conn->client->fd)) {
-                    close(proxy_server);
+                if (!sm3t__set_nonblocking(conn->client->fd)) {
                     cleanup_conn(conn);
+                    close(proxy_server);
+                    close(epoll_fd);
                     return;
                 }
 
@@ -255,18 +284,17 @@ void run_server(char *port) {
                     .conn = conn,
                 };
 
-                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn->client->fd, &ev) == SP_ERR) {
-                    fprintf(stderr, "ERROR: Failed to add fd to epoll list\n");
+                if (!append_poll(epoll_fd, conn->client->fd, &ev)) {
+                    cleanup_conn(conn);
                     close(proxy_server);
                     close(epoll_fd);
-                    cleanup_conn(conn);
                     return;
                 }
 
-                if ((conn->server = calloc(1, sizeof(Client) + BUFFER_SIZE + 1)) == nullptr) {
-                    fprintf(stderr, "ERROR: Failed to allocate memory\n");
-                    close(proxy_server);
+                if ((conn->server = sm3t__new_node()) == nullptr) {
                     cleanup_conn(conn);
+                    close(proxy_server);
+                    close(epoll_fd);
                     return;
                 }
 
@@ -289,10 +317,10 @@ void run_server(char *port) {
                     return;
                 }
 
-                if (!set_nonblocking(conn->server->fd)) {
+                if (!sm3t__set_nonblocking(conn->server->fd)) {
+                    cleanup_conn(conn);
                     close(proxy_server);
                     close(epoll_fd);
-                    cleanup_conn(conn);
                     return;
                 }
 
@@ -301,11 +329,10 @@ void run_server(char *port) {
                     .conn = conn,
                 };
 
-                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn->server->fd, &ev) == SP_ERR) {
-                    fprintf(stderr, "ERROR: Failed to add fd to epoll list\n");
+                if (!append_poll(epoll_fd, conn->client->fd, &ev)) {
+                    cleanup_conn(conn);
                     close(proxy_server);
                     close(epoll_fd);
-                    cleanup_conn(conn);
                     return;
                 }
 
