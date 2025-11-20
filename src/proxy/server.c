@@ -163,7 +163,7 @@ bool sm3t__handle_context(Context *ctx) {
     }
 
     if (n_recv == 0) {
-        fprintf(stderr, "ERROR: Connection closed: Failed to recv data\n");
+        fprintf(stderr, "ERROR: Connection closed\n");
         return false;
     }
 
@@ -174,7 +174,7 @@ bool sm3t__handle_context(Context *ctx) {
     }
 
     if (n_sent == 0) {
-        fprintf(stderr, "ERROR: Connection closed: Failed to send data\n");
+        fprintf(stderr, "ERROR: Connection closed\n");
         return false;
     }
 
@@ -248,9 +248,9 @@ void sm3t__run_server(char *port) {
                         close(client_sock);
                         continue;
                     }
+
                     conn->client = sm3t__new_node();
                     conn->client->sock = client_sock;
-
                     struct sockaddr_in dst_addr = {};
                     socklen_t addr_len = sizeof(dst_addr);
                     if (getsockopt(client_sock, SOL_IP, SO_ORIGINAL_DST, &dst_addr, &addr_len) == SM3T__ERR) {
