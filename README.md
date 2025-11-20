@@ -41,6 +41,9 @@ sudo sg sm3tproxy bin/sm3tproxy
 
 ```bash
 curl http://example.com
+
+## Test in theory
+## curl → iptables REDIRECT → sm3tproxy (port 8080) → real server
 ```
 
 ### 6. Cleanup
@@ -55,11 +58,7 @@ sudo make clean-nat
 make clean
 ```
 
-## Test in theory
 
-```
-curl → iptables REDIRECT → sm3tproxy (port 8080) → real server
-```
 
 ## Roadmap
 
