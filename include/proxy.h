@@ -9,6 +9,7 @@
 #define _POSIX_C_SOURCE 200112L
 #endif
 
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
@@ -33,8 +34,16 @@ typedef enum {
 } Active;
 
 typedef struct {
+    int server_port;
+    int client_port;
+    char server_ip[INET6_ADDRSTRLEN];
+    char client_ip[INET6_ADDRSTRLEN];
+} PeerInfo;
+
+typedef struct {
     Node *client;
     Node *server;
+    PeerInfo info;
 } Conn;
 
 typedef struct {
