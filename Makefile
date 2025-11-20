@@ -13,8 +13,13 @@ ALL_SRC        := $(SRC) $(PROXY_SRC) $(CLI_SRC)
 
 OBJ            := $(ALL_SRC:src/%.c=build/%.o)
 
+NAT			   := ./nat.sh
+SETUP		   := setup
+CLEANUP		   := cleanup
 BIN            := bin/sm3tproxy
-BIN_DIR		   :=bin
+BIN_DIR		   := bin
+SET_GROUP      := sg
+SM3T_GROUP     := sm3tproxy
 
 
 all: $(BIN)
@@ -28,6 +33,15 @@ build/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@
 
+setup-nat:
+	-$(NAT) $(SETUP)
+
+clean-nat: 
+	-$(NAT) $(CLEANUP)
+
+run:
+	- $(SET_GROUP) $(SM3T_GROUP) $(BIN)
+	
 .PHONY:  test all clean install uninstall
 
 clean:

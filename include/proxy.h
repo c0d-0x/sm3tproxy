@@ -22,8 +22,8 @@
 #define MAX_EVENT 5
 
 typedef struct {
-    int fd;
     int n;
+    int sock;
     char buffer[];
 } Node;
 
@@ -43,10 +43,10 @@ typedef struct {
 } Context;
 
 typedef enum {
-    SP_OK = 0,
-    SP_ERR = -1,
-    SP_ERR_TIMEOUT = -2,
-    SP_ERR_PROTOCOL = -3
+    SM3T__OK = 0,
+    SM3T__ERR = -1,
+    SM3T__ERR_TIMEOUT = -2,
+    SM3T__ERR_PROTOCOL = -3
 } Status;
 
 void sm3t__run_server(char *port);

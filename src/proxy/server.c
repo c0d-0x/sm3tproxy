@@ -20,12 +20,12 @@
 
 bool sm3t__set_nonblocking(int fd) {
     int flags = 0;
-    if ((flags = fcntl(fd, F_GETFL, 0)) == SP_ERR) {
+    if ((flags = fcntl(fd, F_GETFL, 0)) == SM3T__ERR) {
         fprintf(stderr, "ERROR: Failed to get fd flags: %s\n", strerror(errno));
         return false;
     }
 
-    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == SP_ERR) {
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == SM3T__ERR) {
         fprintf(stderr, "ERROR: Failed to set fd to non-blocking: %s\n", strerror(errno));
         return false;
     }
@@ -45,35 +45,36 @@ int sm3t__init_server(char *port) {
 
     if ((status = getaddrinfo(nullptr, port, &hint, &host)) != 0) {
         fprintf(stderr, "ERROR: %s", gai_strerror(status));
-        return SP_ERR;
+        return SM3T__ERR;
     }
 
-    if ((sock_fd = socket(host->ai_family, host->ai_socktype, host->ai_protocol)) == SP_ERR) {
+    if ((sock_fd = socket(host->ai_family, host->ai_socktype, host->ai_protocol)) == SM3T__ERR) {
         fprintf(stderr, "ERROR: Failed to create a valid socke: %s", strerror(errno));
         freeaddrinfo(host);
-        return SP_ERR;
+        return SM3T__ERR;
     }
 
-    if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) == SP_ERR) {
+    if (setsockopt(sock_fd, SOL_IP, IP_TRANSPARENT, &(int) {1}, sizeof(int)) == SM3T__ERR
+        || setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) == SM3T__ERR) {
         fprintf(stderr, "ERROR: Failed to set socket options: %s\n", strerror(errno));
-        return SP_ERR;
+        return SM3T__ERR;
     }
 
-    if (bind(sock_fd, host->ai_addr, host->ai_addrlen) == SP_ERR) {
+    if (bind(sock_fd, host->ai_addr, host->ai_addrlen) == SM3T__ERR) {
         fprintf(stderr, "ERROR: Failed to bind socket: %s\n", strerror(errno));
         freeaddrinfo(host);
-        return SP_ERR;
+        return SM3T__ERR;
     }
 
     if (!sm3t__set_nonblocking(sock_fd)) {
         freeaddrinfo(host);
-        return SP_ERR;
+        return SM3T__ERR;
     }
 
-    if (listen(sock_fd, BACKLOG) == SP_ERR) {
+    if (listen(sock_fd, BACKLOG) == SM3T__ERR) {
         fprintf(stderr, "ERROR: Failed to listen: %s\n", strerror(errno));
         freeaddrinfo(host);
-        return SP_ERR;
+        return SM3T__ERR;
     }
 
     freeaddrinfo(host);
@@ -82,267 +83,220 @@ int sm3t__init_server(char *port) {
 
 void *sm3t__new_node(void) {
     Node *node = nullptr;
-    if ((node = calloc(1, sizeof(Node) + BUFFER_SIZE + 1)) == nullptr) {
+    if ((node = calloc(1, sizeof(Node) + BUFFER_SIZE)) == nullptr) {
         fprintf(stderr, "ERROR: Failed to allocate memory\n");
         return nullptr;
     }
     return node;
 }
 
-static void close_node(Node *node) {
+void sm3t__close_node(Node *node) {
     if (node != nullptr) {
-        close(node->fd);
+        close(node->sock);
         free(node);
+        node = nullptr;
     }
 }
 
-static void cleanup_conn(Conn *conn) {
-    close_node(conn->client);
-    close_node(conn->server);
-    free(conn);
-    conn = nullptr;
+void sm3t__cleanup_conn(Conn *conn) {
+    if (conn != nullptr) {
+        sm3t__close_node(conn->client);
+        sm3t__close_node(conn->server);
+        free(conn);
+        conn = nullptr;
+    }
 }
 
-static int connect_to_server(struct sockaddr_in *server_addr, socklen_t addr_len) {
-    char ip[INET_ADDRSTRLEN];
-    int server_sock = SP_ERR;
-    inet_ntop(AF_INET, (const void *) &server_addr->sin_addr, ip, sizeof(ip));
+int sm3t__connect_to_server(struct sockaddr_in *server_addr, socklen_t addr_len) {
+    char ip[INET6_ADDRSTRLEN] = {};
+    int server_sock = SM3T__ERR;
+    inet_ntop(server_addr->sin_family, (const void *) &server_addr->sin_addr, ip, sizeof(ip));
 
-    if ((server_sock = socket(AF_INET, SOCK_STREAM, 0)) == SP_ERR) {
-        fprintf(stderr, "ERROR: Failed to create sever socket: %s", strerror(errno));
-        return SP_ERR;
+    if ((server_sock = socket(server_addr->sin_family, SOCK_STREAM, 0)) == SM3T__ERR) {
+        fprintf(stderr, "ERROR: Failed to create sever socket: %s\n", strerror(errno));
+        return SM3T__ERR;
     }
 
-    if (connect(server_sock, server_addr, addr_len) == SP_ERR) {
+    if (connect(server_sock, (struct sockaddr *) server_addr, addr_len) == SM3T__ERR) {
         fprintf(stderr, "ERROR: Failed to connect to sever: %s:%d\n", ip, ntohs(server_addr->sin_port));
         fprintf(stderr, "ERROR: %s\n", strerror(errno));
-        return SP_ERR;
+        return SM3T__ERR;
     }
 
-    fprintf(stderr, "INFO: connection to sever: %s:%d established\n", ip, ntohs(server_addr->sin_port));
+    fprintf(stderr, "INFO: Connection to original sever: %s:%d established\n", ip, ntohs(server_addr->sin_port));
     return server_sock;
 }
 
-static bool handle_context(Context *ctx) {
-    int n = SP_ERR;
+Context *sm3t__new_context(Conn *conn, Active active) {
+    Context *ctx = calloc(1, sizeof(Context));
+    if (ctx == nullptr) {
+        fprintf(stderr, "ERROR: Failed to allocate memory\n");
+        return nullptr;
+    }
+
+    ctx->active = active;
+    ctx->conn = conn;
+    return ctx;
+}
+
+bool sm3t__handle_context(Context *ctx) {
+    int n_recv = 0;
+    int n_sent = 0;
     Conn *conn = ctx->conn;
+    int sock_in, sock_out;
+    char *buff;
+
     if (ctx->active == SERVER) {
-        if ((n = recv(conn->server->fd, conn->server->buffer, BUFFER_SIZE, 0)) == SP_ERR) {
-            fprintf(stderr, "ERROR: Failed to recv from server: %s\n", strerror(errno));
-            return false;
-        }
-
-        if (n == 0) {
-            fprintf(stderr, "INFO: Connection closed\n");
-            cleanup_conn(conn);
-            return false;
-        }
-
-        conn->server->n = n;
-        if ((send(conn->client->fd, conn->client->buffer, BUFFER_SIZE, 0) == SP_ERR)) {
-            fprintf(stderr, "ERROR: Failed to send to client: %s\n", strerror(errno));
-            return false;
-        }
-
-        if (n == 0) {
-            fprintf(stderr, "INFO: Connection closed\n");
-            cleanup_conn(conn);
-            return false;
-        }
-
-        if (n != conn->server->n) {
-            fprintf(stderr, "INFO: Under send to client\n");
-            return false;
-        }
-
+        sock_in = conn->server->sock;
+        sock_out = conn->client->sock;
+        buff = conn->server->buffer;
     } else {
-        if ((n = recv(conn->client->fd, conn->client->buffer, BUFFER_SIZE, 0)) == SP_ERR) {
-            fprintf(stderr, "ERROR: Failed to recv from client: %s\n", strerror(errno));
-            return false;
-        }
+        sock_in = conn->client->sock;
+        sock_out = conn->server->sock;
+        buff = conn->client->buffer;
+    }
 
-        if (n == 0) {
-            fprintf(stderr, "INFO: Connection closed\n");
-            cleanup_conn(conn);
-            return false;
-        }
-        conn->server->n = n;
-        if ((n = send(conn->server->fd, conn->server->buffer, BUFFER_SIZE, 0) < 0)) {
-            fprintf(stderr, "ERROR: Failed to send to server: %s\n", strerror(errno));
-            return false;
-        }
+    if ((n_recv = recv(sock_in, buff, BUFFER_SIZE - 1, 0)) == SM3T__ERR) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) return true;
+        fprintf(stderr, "ERROR: Failed to recv data: %s\n", strerror(errno));
+        return true;
+    }
 
-        if (n == 0) {
-            fprintf(stderr, "INFO: Connection closed\n");
-            cleanup_conn(conn);
-            return false;
-        }
+    if (n_recv == 0) {
+        fprintf(stderr, "ERROR: Connection closed: Failed to recv data\n");
+        return false;
+    }
 
-        if (n != conn->client->n) {
-            fprintf(stderr, "INFO: Under send to server\n");
-            return false;
-        }
+    if ((n_sent = send(sock_out, buff, n_recv, 0)) == SM3T__ERR) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) return true;
+        fprintf(stderr, "ERROR: Failed to send data: %s\n", strerror(errno));
+        return true;
+    }
+
+    if (n_sent == 0) {
+        fprintf(stderr, "ERROR: Connection closed: Failed to send data\n");
+        return false;
+    }
+
+    if (n_recv != n_sent) {
+        fprintf(stderr, "INFO: Partial send to client\n");
+        return true;
     }
 
     return true;
 }
 
-static void echo_engine(Conn *conn) {
-    assert(conn != nullptr);
-
-    int n = 0;
-    if ((conn->client->n = recv(conn->client->fd, conn->client->buffer, BUFFER_SIZE, 0)) == 0) {
-        fprintf(stderr, "INFO: connection closed\n");
-        cleanup_conn(conn);
-        return;
-    }
-
-    n = conn->client->n;
-    conn->client->buffer[n] = '\0';
-    fprintf(stdout, "MSG: %s\n", conn->client->buffer);
-    if ((n = send(conn->client->fd, conn->client->buffer, n, 0)) == 0) {
-        fprintf(stderr, "INFO: Connection a closed\n");
-        cleanup_conn(conn);
-        return;
-    }
-    return;
-}
-
-static bool append_poll(int epoll_fd, int fd, struct epoll_event *ev) {
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, ev) == SP_ERR) {
+static bool append_poll(int *epoll_fd, int *fd, struct epoll_event *ev) {
+    if (epoll_ctl(*epoll_fd, EPOLL_CTL_ADD, *fd, ev) == SM3T__ERR) {
         fprintf(stderr, "ERROR: Failed to add fd to epoll list\n");
         return false;
     }
     return true;
 }
-
+static bool remove_poll(int *epoll_fd, int fd, struct epoll_event *ev) {
+    if (epoll_ctl(*epoll_fd, EPOLL_CTL_DEL, fd, ev) == SM3T__ERR) {
+        fprintf(stderr, "ERROR: Failed to add fd to epoll list\n");
+        return false;
+    }
+    return true;
+}
 void sm3t__run_server(char *port) {
     if (port == nullptr) port = DEFAULT_PORT;
-    int proxy_server = sm3t__init_server(port);
 
-    int epoll_fd = 0;
-    struct epoll_event ev = {};
-    ev.events = EPOLLIN;
-    ev.data.fd = proxy_server;
-    if ((epoll_fd = epoll_create(BACKLOG)) == SP_ERR) {
-        fprintf(stderr, "ERROR: Failed to create an epoll instance\n");
+    int proxy_server = sm3t__init_server(port);
+    if (proxy_server == SM3T__ERR) return;
+
+    int epoll_fd = epoll_create(BACKLOG);
+    if (epoll_fd == SM3T__ERR) {
+        fprintf(stderr, "ERROR: Failed to create epoll instance\n");
         close(proxy_server);
         return;
     }
 
-    if (!append_poll(epoll_fd, proxy_server, &ev)) {
+    struct epoll_event ev = {};
+    ev.events = EPOLLIN;
+    ev.data.fd = proxy_server;
+    if (!append_poll(&epoll_fd, &proxy_server, &ev)) {
         close(proxy_server);
         close(epoll_fd);
         return;
     }
 
-    int n = 0;
-    struct epoll_event ev_list[MAX_EVENT];
-    while (true) {
-        if ((n = epoll_wait(epoll_fd, ev_list, MAX_EVENT, -1)) == SP_ERR) {
-            fprintf(stderr, "ERROR: Failed to wait for epoll events\n");
-            close(proxy_server);
-            close(epoll_fd);
-            return;
+    struct epoll_event ev_list[MAX_EVENT] = {};
+
+    while (1) {
+        int n_events = epoll_wait(epoll_fd, ev_list, MAX_EVENT, -1);
+        if (n_events == SM3T__ERR) {
+            fprintf(stderr, "ERROR: epoll_wait failed\n");
+            break;
         }
 
-        for (int i = 0; i < n; i++) {
-            if (ev_list[i].data.fd == proxy_server) {
-                fprintf(stderr, "INFO: Accepting new incoming connection\n");
-                Conn *conn = calloc(1, sizeof(Conn));
-                if (conn == nullptr) {
-                    fprintf(stderr, "ERROR: Failed to allocate memory\n");
-                    close(proxy_server);
-                    close(epoll_fd);
-                    return;
-                }
+        for (int i = 0; i < n_events; i++) {
+            if (ev_list[i].events & EPOLLIN) {
+                if (ev_list[i].data.fd == proxy_server) {
+                    fprintf(stderr, "INFO: Accepting new incoming connection\n");
 
-                if ((conn->client = sm3t__new_node()) == nullptr) {
-                    cleanup_conn(conn);
-                    close(proxy_server);
-                    close(epoll_fd);
-                    return;
-                }
+                    int client_sock = accept(proxy_server, NULL, NULL);
+                    if (client_sock == SM3T__ERR) {
+                        fprintf(stderr, "ERROR: accept failed: %s\n", strerror(errno));
+                        continue;
+                    }
 
-                if ((conn->client->fd = accept(proxy_server, nullptr, nullptr)) == SP_ERR) {
-                    fprintf(stderr, "ERROR: Failed to accept connection: %s\n", strerror(errno));
-                    cleanup_conn(conn);
-                    close(proxy_server);
-                    close(epoll_fd);
-                    continue;
-                }
+                    sm3t__set_nonblocking(client_sock);
+                    Conn *conn = calloc(1, sizeof(Conn));
+                    if (conn == nullptr) {
+                        close(client_sock);
+                        continue;
+                    }
+                    conn->client = sm3t__new_node();
+                    conn->client->sock = client_sock;
 
-                if (!sm3t__set_nonblocking(conn->client->fd)) {
-                    cleanup_conn(conn);
-                    close(proxy_server);
-                    close(epoll_fd);
-                    return;
-                }
+                    struct sockaddr_in dst_addr = {};
+                    socklen_t addr_len = sizeof(dst_addr);
+                    if (getsockopt(client_sock, SOL_IP, SO_ORIGINAL_DST, &dst_addr, &addr_len) == SM3T__ERR) {
+                        fprintf(stderr, "ERROR: getsockopt SO_ORIGINAL_DST failed\n");
+                        sm3t__cleanup_conn(conn);
+                        continue;
+                    }
 
-                ev.data.ptr = &(Context) {
-                    .active = CLIENT,
-                    .conn = conn,
-                };
+                    char buf[INET_ADDRSTRLEN];
+                    inet_ntop(AF_INET, &dst_addr.sin_addr, buf, sizeof(buf));
+                    fprintf(stderr, "INFO: Connecting to original server %s:%d\n", buf, ntohs(dst_addr.sin_port));
 
-                if (!append_poll(epoll_fd, conn->client->fd, &ev)) {
-                    cleanup_conn(conn);
-                    close(proxy_server);
-                    close(epoll_fd);
-                    return;
-                }
+                    conn->server = sm3t__new_node();
+                    conn->server->sock = sm3t__connect_to_server(&dst_addr, addr_len);
+                    if (conn->server->sock == SM3T__ERR) {
+                        sm3t__cleanup_conn(conn);
+                        continue;
+                    }
 
-                if ((conn->server = sm3t__new_node()) == nullptr) {
-                    cleanup_conn(conn);
-                    close(proxy_server);
-                    close(epoll_fd);
-                    return;
-                }
+                    sm3t__set_nonblocking(conn->server->sock);
+                    Context *ctx_client = sm3t__new_context(conn, CLIENT);
+                    Context *ctx_server = sm3t__new_context(conn, SERVER);
+                    assert(ctx_server != nullptr);
+                    assert(ctx_client != nullptr);
 
-                struct sockaddr_in dst_server_addr;
-                socklen_t addr_len = sizeof(dst_server_addr);
+                    ev.events = EPOLLIN;
+                    ev.data.ptr = ctx_client;
+                    append_poll(&epoll_fd, &client_sock, &ev);
 
-                if (getsockopt(conn->client->fd, SOL_IP, SO_ORIGINAL_DST, &dst_server_addr, &addr_len) == SP_ERR) {
-                    fprintf(stderr, "ERROR: Failed to add fd to epoll list\n");
-                    close(proxy_server);
-                    close(epoll_fd);
-                    cleanup_conn(conn);
-                    return;
-                }
+                    ev.data.ptr = ctx_server;
+                    append_poll(&epoll_fd, &conn->server->sock, &ev);
 
-                conn->server->fd = connect_to_server(&dst_server_addr, addr_len);
-                if (conn->server->fd == SP_ERR) {
-                    close(proxy_server);
-                    close(epoll_fd);
-                    cleanup_conn(conn);
-                    return;
-                }
-
-                if (!sm3t__set_nonblocking(conn->server->fd)) {
-                    cleanup_conn(conn);
-                    close(proxy_server);
-                    close(epoll_fd);
-                    return;
-                }
-
-                ev.data.ptr = &(Context) {
-                    .active = SERVER,
-                    .conn = conn,
-                };
-
-                if (!append_poll(epoll_fd, conn->client->fd, &ev)) {
-                    cleanup_conn(conn);
-                    close(proxy_server);
-                    close(epoll_fd);
-                    return;
-                }
-
-            } else {
-                if (ev_list[0].events & EPOLLIN) {
+                } else {
                     Context *ctx = ev_list[i].data.ptr;
-                    // TODO: handle connection here
-                    handle_context(ctx);
+                    if (!sm3t__handle_context(ctx)) {
+                        int sock = ctx->active == CLIENT ? ctx->conn->client->sock : ctx->conn->server->sock;
+                        remove_poll(&epoll_fd, sock, &ev);
+                        sm3t__cleanup_conn(ctx->conn);
+                        free(ctx);
+                        ctx = nullptr;
+                    }
                 }
             }
         }
     }
+
+    close(proxy_server);
+    close(epoll_fd);
 }
