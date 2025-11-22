@@ -34,6 +34,92 @@ bool sm3t__set_nonblocking(int fd) {
     return true;
 }
 
+Node *sm3t__new_node(void) {
+    Node *node = nullptr;
+    if ((node = calloc(1, sizeof(Node) + BUFFER_SIZE)) == nullptr) {
+        fprintf(stderr, "ERROR: Failed to allocate memory\n");
+        return nullptr;
+    }
+    return node;
+}
+
+void sm3t__close_node(Node *node) {
+    close(node->sock);
+    free(node);
+}
+
+Conn *sm3t__new_conn(void) {
+    Conn *conn = nullptr;
+    if ((conn = calloc(1, sizeof(Conn))) == nullptr) {
+        fprintf(stderr, "ERROR: Failed to allocate memory\n");
+        return nullptr;
+    }
+
+    conn->refcount = 2;
+    return conn;
+}
+
+void sm3t__cleanup_conn(Conn *conn) {
+    fprintf(stderr, "INFO: Closing connection: %s:%d => %s:%d\n", conn->info.client_ip, conn->info.client_port,
+            conn->info.server_ip, conn->info.server_port);
+    sm3t__close_node(conn->client);
+    sm3t__close_node(conn->server);
+    free(conn);
+}
+
+void sm3t__set_peer_info(Conn *conn, struct sockaddr_in *server_addr, struct sockaddr_in *client_addr) {
+    conn->info.server_port = ntohs(server_addr->sin_port);
+    inet_ntop(server_addr->sin_family, (const void *) &server_addr->sin_addr, conn->info.server_ip, INET_ADDRSTRLEN);
+
+    conn->info.client_port = ntohs(server_addr->sin_port);
+    inet_ntop(client_addr->sin_family, (const void *) &client_addr->sin_addr, conn->info.client_ip, INET_ADDRSTRLEN);
+}
+
+int sm3t__connect_to_server(struct sockaddr_in *server_addr, char *ip, int port) {
+    int server_sock = SM3T__ERR;
+    if ((server_sock = socket(server_addr->sin_family, SOCK_STREAM, 0)) == SM3T__ERR) {
+        fprintf(stderr, "ERROR: Failed to create sever socket: %s\n", strerror(errno));
+        return SM3T__ERR;
+    }
+
+    if (connect(server_sock, (struct sockaddr *) server_addr, sizeof(struct sockaddr_in)) == SM3T__ERR) {
+        fprintf(stderr, "ERROR: Failed to connect to sever: %s:%d\n", ip, port);
+        fprintf(stderr, "ERROR: %s\n", strerror(errno));
+        return SM3T__ERR;
+    }
+
+    fprintf(stderr, "INFO: Connection to: %s:%d established\n", ip, port);
+    return server_sock;
+}
+
+Context *sm3t__new_context(Conn *conn, Active active) {
+    Context *ctx = malloc(sizeof(Context));
+    if (ctx == nullptr) {
+        fprintf(stderr, "ERROR: Failed to allocate memory\n");
+        return nullptr;
+    }
+
+    ctx->active = active;
+    ctx->conn = conn;
+    return ctx;
+}
+
+static bool append_poll(int *epoll_fd, int *fd, struct epoll_event *ev) {
+    if (epoll_ctl(*epoll_fd, EPOLL_CTL_ADD, *fd, ev) == SM3T__ERR) {
+        fprintf(stderr, "ERROR: Failed to add fd to epoll list\n");
+        return false;
+    }
+    return true;
+}
+
+static bool remove_poll(int *epoll_fd, int fd) {
+    if (epoll_ctl(*epoll_fd, EPOLL_CTL_DEL, fd, nullptr) == SM3T__ERR) {
+        fprintf(stderr, "ERROR: Failed to add fd to epoll list\n");
+        return false;
+    }
+    return true;
+}
+
 int sm3t__init_server(char *port) {
     struct addrinfo *host = nullptr;
     struct addrinfo hint = {};
@@ -82,90 +168,10 @@ int sm3t__init_server(char *port) {
     return sock_fd;
 }
 
-Node *sm3t__new_node(void) {
-    Node *node = nullptr;
-    if ((node = calloc(1, sizeof(Node) + BUFFER_SIZE)) == nullptr) {
-        fprintf(stderr, "ERROR: Failed to allocate memory\n");
-        return nullptr;
-    }
-    return node;
-}
-
-Conn *sm3t__new_conn(void) {
-    Conn *conn = nullptr;
-    if ((conn = calloc(1, sizeof(Conn))) == nullptr) {
-        fprintf(stderr, "ERROR: Failed to allocate memory\n");
-        return nullptr;
-    }
-
-    return conn;
-}
-
-void sm3t__close_node(Node *node) {
-    if (node != nullptr) {
-        if (node->sock > 0) {
-            close(node->sock);
-            free(node);
-            node = nullptr;
-        }
-    }
-}
-
-void sm3t__set_peer_info(Conn *conn, struct sockaddr_in *server_addr, struct sockaddr_in *client_addr) {
-    conn->info.server_port = ntohs(server_addr->sin_port);
-    inet_ntop(server_addr->sin_family, (const void *) &server_addr->sin_addr, conn->info.server_ip, INET_ADDRSTRLEN);
-
-    conn->info.client_port = ntohs(server_addr->sin_port);
-    inet_ntop(client_addr->sin_family, (const void *) &client_addr->sin_addr, conn->info.client_ip, INET_ADDRSTRLEN);
-}
-
-void sm3t__cleanup_conn(Conn *conn) {
-    if (conn != nullptr) {
-        fprintf(stderr, "INFO: Closing connection: %s:%d\n", conn->info.client_ip, conn->info.client_port);
-        sm3t__close_node(conn->client);
-        fprintf(stderr, "INFO: Closing connection: %s:%d\n", conn->info.server_ip, conn->info.server_port);
-        sm3t__close_node(conn->server);
-        free(conn);
-        conn = nullptr;
-    }
-}
-
-int sm3t__connect_to_server(struct sockaddr_in *server_addr, char *ip, int port) {
-    int server_sock = SM3T__ERR;
-    if ((server_sock = socket(server_addr->sin_family, SOCK_STREAM, 0)) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to create sever socket: %s\n", strerror(errno));
-        return SM3T__ERR;
-    }
-
-    if (connect(server_sock, (struct sockaddr *) server_addr, sizeof(struct sockaddr_in)) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to connect to sever: %s:%d\n", ip, port);
-        fprintf(stderr, "ERROR: %s\n", strerror(errno));
-        return SM3T__ERR;
-    }
-
-    fprintf(stderr, "INFO: Connection to original sever: %s:%d established\n", ip, port);
-    return server_sock;
-}
-
-Context *sm3t__new_context(Conn *conn, Active active) {
-    Context *ctx = calloc(1, sizeof(Context));
-    if (ctx == nullptr) {
-        fprintf(stderr, "ERROR: Failed to allocate memory\n");
-        return nullptr;
-    }
-
-    ctx->active = active;
-    ctx->conn = conn;
-    return ctx;
-}
-
-bool sm3t__handle_context(Context *ctx) {
+bool sm3t__handle_context(Context ctx[static 1]) {
     int n_recv = 0;
     char *ip;
     int port;
-
-    if (ctx == nullptr) return false;
-    if (ctx->conn == nullptr) return false;
 
     Conn *conn = ctx->conn;
     int sock_in, sock_out;
@@ -187,14 +193,19 @@ bool sm3t__handle_context(Context *ctx) {
         buff = conn->client->buffer;
     }
 
+    if (ctx->events & EPOLLRDHUP) {
+        fprintf(stderr, "INFO: Node(HUP): %s:%d: %s\n", ip, port, strerror(errno));
+        return false;
+    }
+
     if ((n_recv = recv(sock_in, buff, BUFFER_SIZE - 1, 0)) == SM3T__ERR) {
         if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;
-        fprintf(stderr, "ERROR: Failed to recv data:  %s:%d : %s\n", ip, port, strerror(errno));
+        fprintf(stderr, "ERROR: Failed to recv data: %s:%d: %s\n", ip, port, strerror(errno));
         return true;
     }
 
     if (n_recv == 0) {
-        fprintf(stderr, "INFO: Connection closed: %s:%d : %s\n", ip, port, strerror(errno));
+        fprintf(stderr, "INFO: Node(closed): %s:%d: %s\n", ip, port, strerror(errno));
         return false;
     }
 
@@ -204,12 +215,13 @@ bool sm3t__handle_context(Context *ctx) {
     while (total_sent < n_recv) {
         if ((n_sent = send(sock_out, buff + total_sent, bytes_left, 0)) == SM3T__ERR) {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) break;
-            fprintf(stderr, "ERROR: Failed to send data:  %s:%d : %s\n", ip, port, strerror(errno));
-            return false;
+            fprintf(stderr, "ERROR: Failed to send data: %s:%d: %s\n", ip, port, strerror(errno));
+            return true;
         }
 
         if (n_sent == 0) {
-            fprintf(stderr, "INFO: Connection closed: %s:%d : %s\n", ip, port, strerror(errno));
+            conn->refcount--;
+            fprintf(stderr, "INFO: Node(closed): %s:%d: %s\n", ip, port, strerror(errno));
             return false;
         }
 
@@ -217,22 +229,6 @@ bool sm3t__handle_context(Context *ctx) {
         bytes_left -= n_sent;
     }
 
-    return true;
-}
-
-static bool append_poll(int *epoll_fd, int *fd, struct epoll_event *ev) {
-    if (epoll_ctl(*epoll_fd, EPOLL_CTL_ADD, *fd, ev) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to add fd to epoll list\n");
-        return false;
-    }
-    return true;
-}
-
-static bool remove_poll(int *epoll_fd, int fd, struct epoll_event *ev) {
-    if (epoll_ctl(*epoll_fd, EPOLL_CTL_DEL, fd, ev) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to add fd to epoll list\n");
-        return false;
-    }
     return true;
 }
 
@@ -250,7 +246,7 @@ void sm3t__run_server(char *port) {
     }
 
     struct epoll_event ev = {};
-    ev.events = EPOLLIN;
+    ev.events = EPOLLIN | EPOLLRDHUP;
     ev.data.fd = proxy_server;
     if (!append_poll(&epoll_fd, &proxy_server, &ev)) {
         close(proxy_server);
@@ -313,28 +309,30 @@ void sm3t__run_server(char *port) {
                     }
 
                     sm3t__set_nonblocking(conn->server->sock);
-                    Context *ctx_client = sm3t__new_context(conn, CLIENT);
-                    Context *ctx_server = sm3t__new_context(conn, SERVER);
-                    assert(ctx_server != nullptr);
-                    assert(ctx_client != nullptr);
+                    Context *client_ctx = sm3t__new_context(conn, CLIENT);
+                    Context *server_ctx = sm3t__new_context(conn, SERVER);
+                    assert(server_ctx != nullptr);
+                    assert(client_ctx != nullptr);
 
-                    ev.events = EPOLLIN;
-                    ev.data.ptr = ctx_client;
+                    client_ctx->peer = server_ctx;
+                    server_ctx->peer = client_ctx;
+                    ev.events = EPOLLIN | EPOLLRDHUP;
+                    ev.data.ptr = client_ctx;
                     append_poll(&epoll_fd, &client_sock, &ev);
 
-                    ev.data.ptr = ctx_server;
+                    ev.data.ptr = server_ctx;
                     append_poll(&epoll_fd, &conn->server->sock, &ev);
 
                 } else {
                     Context *ctx = ev_list[i].data.ptr;
+                    ctx->events = ev_list[i].events;
                     if (!sm3t__handle_context(ctx)) {
-                        if (ctx != nullptr) {
-                            int sock = ctx->active == CLIENT ? ctx->conn->client->sock : ctx->conn->server->sock;
-                            remove_poll(&epoll_fd, sock, &ev);
-                            sm3t__cleanup_conn(ctx->conn);
-                            free(ctx);
-                            ctx = nullptr;
-                        }
+                        Conn *conn = ctx->conn;
+                        remove_poll(&epoll_fd, ctx->conn->client->sock);
+                        remove_poll(&epoll_fd, ctx->conn->server->sock);
+                        sm3t__cleanup_conn(conn);
+                        free(ctx->peer);
+                        free(ctx);
                     }
                 }
             }

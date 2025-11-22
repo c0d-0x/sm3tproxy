@@ -10,6 +10,8 @@
 #endif
 
 #include <netinet/in.h>
+#include <stdint.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
@@ -41,14 +43,17 @@ typedef struct {
 } PeerInfo;
 
 typedef struct {
+    uint16_t refcount;
     Node *client;
     Node *server;
     PeerInfo info;
 } Conn;
 
-typedef struct {
+typedef struct Context {
     Active active;
+    uint32_t events;
     Conn *conn;
+    struct Context *peer;
 } Context;
 
 typedef enum {
