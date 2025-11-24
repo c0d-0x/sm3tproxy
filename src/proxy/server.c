@@ -233,8 +233,6 @@ bool sm3t__handle_context(Context ctx[static 1]) {
 }
 
 void sm3t__run_server(char *port) {
-    if (port == nullptr) port = DEFAULT_PORT;
-
     int proxy_server = sm3t__init_server(port);
     if (proxy_server == SM3T__ERR) return;
 

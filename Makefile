@@ -2,14 +2,14 @@ CC             = gcc
 
 CFLAGS         ?= -Wall -g -std=c23 -Wextra -Wformat-security -Wformat-overflow=2 -O2
 
-INCLUDE        ?= -Iinclude
+INCLUDE        ?= -Iinclude -Ilib
 
 LDLIBS         =  -lm -ldl -lpthread
 
 SRC            := $(wildcard src/*.c)
 PROXY_SRC        := $(wildcard src/proxy/*.c)
-CLI_SRC        := $(wildcard src/cli/*.c)
-ALL_SRC        := $(SRC) $(PROXY_SRC) $(CLI_SRC)
+CMD_SRC        := $(wildcard src/cmd/*.c)
+ALL_SRC        := $(SRC) $(PROXY_SRC) $(CMD_SRC)
 
 OBJ            := $(ALL_SRC:src/%.c=build/%.o)
 
@@ -34,13 +34,13 @@ build/%.o: src/%.c
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@
 
 setup-nat:
-	-$(NAT) $(SETUP)
+	-@$(NAT) $(SETUP)
 
 clean-nat: 
 	-$(NAT) $(CLEANUP)
 
 run:
-	- $(SET_GROUP) $(SM3T_GROUP) $(BIN)
+	- @$(SET_GROUP) $(SM3T_GROUP) $(BIN)
 	
 .PHONY:  test all clean install uninstall
 

@@ -1,3 +1,4 @@
   -xc
   -Iinclude
+  -Ilib
   -std=c23

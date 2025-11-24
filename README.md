@@ -3,7 +3,7 @@
 A lightweight programmable TCP proxy server.
 
 > [!NOTE]
-> This project is experimental, created to explore c23 and network programming.
+> This project is experimental, developed to explore C23 features and network programming concepts.
 
 ## Quick Start
 
@@ -33,6 +33,7 @@ sudo make run
 ```
 
 Or manually:
+
 ```bash
 sudo sg sm3tproxy bin/sm3tproxy
 ```
@@ -57,8 +58,6 @@ sudo make clean-nat
 # Clean build files
 make clean
 ```
-
-
 
 ## Roadmap
 
