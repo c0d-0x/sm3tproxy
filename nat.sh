@@ -3,6 +3,7 @@ PROXY_PORT=8080
 PROXY_GROUP="sm3tproxy"
 
 setup_nat() {
+    echo "[+] Setting up transparent proxy"
 
     iptables -t nat -F OUTPUT
     iptables -t nat -A OUTPUT -o lo -j RETURN
@@ -12,13 +13,13 @@ setup_nat() {
     iptables -t nat -A OUTPUT -p tcp --dport 80 -j REDIRECT --to-port "$PROXY_PORT"
     iptables -t nat -A OUTPUT -p tcp --dport 443 -j REDIRECT --to-port "$PROXY_PORT"
 
-    echo "[*] Setup complete!"
+    echo "[+] Setup complete!"
     iptables -t nat -L OUTPUT -n -v --line-numbers
 }
 
 cleanup_nat() {
     iptables -t nat -F OUTPUT
-    echo "[*] Cleanup complete."
+    echo "[+] Cleanup complete."
 }
 
 case "$1" in

@@ -23,7 +23,7 @@ SM3T_GROUP     := sm3tproxy
 
 
 all: $(BIN)
-	@echo 'Build complete (dev).'
+	@echo '[+] Build complete (dev).'
 
 $(BIN): $(OBJ)
 	@mkdir -p $(dir $@)
@@ -34,17 +34,17 @@ build/%.o: src/%.c
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@
 
 setup-nat:
-	-@$(NAT) $(SETUP)
+	-$(NAT) $(SETUP)
 
 clean-nat: 
 	-$(NAT) $(CLEANUP)
 
 run:
-	- @$(SET_GROUP) $(SM3T_GROUP) $(BIN)
+	-$(SET_GROUP) $(SM3T_GROUP) $(BIN)
 	
 .PHONY:  test all clean install uninstall
 
 clean:
-	@echo "Cleaning up build files"
+	@echo "[+] Cleaning complete"
 	@rm -rf build $(BIN_DIR)
 
