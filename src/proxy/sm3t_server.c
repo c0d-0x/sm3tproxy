@@ -175,6 +175,7 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1]) {
             peer->write_eof = true;
             peer->peer = NULL;
         }
+
         ctx->peer = NULL;
         fprintf(stderr, "INFO: send returned 0 (peer closed?) for %s:%u\n", ip, port);
         return false;
@@ -197,74 +198,6 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1]) {
 
     return true;
 }
-
-// bool sm3t__handle_context(sm3t_context_t ctx[static 1]) {
-//     if (ctx->peer == NULL) {
-//         ctx->write_eof = true;
-//         ctx->read_eof = true;
-//         shutdown(ctx->fd, SHUT_RDWR);
-//         return false;
-//     }
-//
-//     char *ip = ctx->meta.addr;
-//     uint32_t port = ctx->meta.port;
-//
-//     int fd_in = ctx->fd;
-//     int fd_out = ctx->peer->fd;
-//     uint8_t *buff = ctx->buffer;
-//     int n_recv = 0;
-//     int n_sent = 0;
-//
-//     if (ctx->events & EPOLLRDHUP) {
-//         ctx->read_eof = true;
-//         ctx->peer->peer = NULL;
-//         ctx->peer = NULL;
-//         fprintf(stderr, "INFO: Node(HUP): %s:%d: %s\n", ip, port, strerror(errno));
-//         return false;
-//     }
-//
-//     if ((n_recv = recv(fd_in, buff, BUFFER_SIZE - 1, 0)) == SM3T__ERR) {
-//         if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;
-//         fprintf(stderr, "ERROR: Failed to recv data: %s:%d: %s\n", ip, port, strerror(errno));
-//         return true;
-//     }
-//
-//     if (n_recv == 0) {
-//         ctx->read_eof = true;
-//         ctx->peer = NULL;
-//         ctx->peer->peer = NULL;
-//         fprintf(stderr, "INFO: Node(closed): %s:%d: %s\n", ip, port, strerror(errno));
-//         return false;
-//     }
-//
-//     if ((n_sent = send(fd_out, buff, n_recv, 0)) == SM3T__ERR) {
-//         if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;
-//         ctx->wpartial = true;
-//         ctx->wlen = n_recv;
-//         ctx->wstart = 0;
-//         fprintf(stderr, "ERROR: Failed to send data: %s:%d: %s\n", ip, port, strerror(errno));
-//         return true;
-//     }
-//
-//     if (n_sent == 0) {
-//         ctx->peer->write_eof = true;
-//         ctx->peer->peer = NULL;
-//         ctx->peer = NULL;
-//         fprintf(stderr, "INFO: Node(closed): %s:%d: %s\n", ip, port, strerror(errno));
-//         return false;
-//     }
-//
-//     if (n_sent != n_recv) {
-//         // WARNING: Partial send
-//         ctx->wpartial = true;
-//         ctx->wlen = n_recv - n_sent;
-//         ctx->wstart = n_sent;
-//         return true;
-//     }
-//
-//     ctx->wpartial = false;
-//     return true;
-// }
 
 void sm3t__run_server(char *port) {
     int proxy_server = sm3t__init_server(port);
@@ -321,7 +254,9 @@ void sm3t__run_server(char *port) {
 
                     struct sockaddr_storage server_addr = {};
                     socklen_t server_addr_len = sizeof(server_addr);
-                    if (getsockopt(client_sock, SOL_IP, SO_ORIGINAL_DST, &server_addr, &server_addr_len) == SM3T__ERR) {
+                    if (getsockopt(client_sock, SOL_IP, SO_ORIGINAL_DST, (struct sockaddr *) &server_addr,
+                                   &server_addr_len)
+                        == SM3T__ERR) {
                         fprintf(stderr, "ERROR: getsockopt SO_ORIGINAL_DST failed\n");
                         continue;
                     }
@@ -335,6 +270,8 @@ void sm3t__run_server(char *port) {
 
                     sm3t__set_nonblocking(server_sock);
                     ev.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP;
+                    client_ctx->peer = server_ctx;
+                    server_ctx->peer = client_ctx;
 
                     client_ctx->fd = client_sock;
                     ev.data.ptr = client_ctx;
@@ -354,7 +291,7 @@ void sm3t__run_server(char *port) {
                 }
             }
 
-            // cleanup_vec(dead_ctxs);
+            cleanup_vec(dead_ctxs);
         }
     }
 
