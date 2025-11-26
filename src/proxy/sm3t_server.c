@@ -128,8 +128,7 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1]) {
         return false;
     }
 
-    n_recv = recv(fd_in, buff, BUFFER_SIZE - 1, 0);
-    if (n_recv == SM3T__ERR) {
+    if ((n_recv = recv(fd_in, buff, BUFFER_SIZE - 1, 0)) == SM3T__ERR) {
         if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;
 
         fprintf(stderr, "ERROR: Failed to recv data from %s:%u: %s\n", ip, port, strerror(errno));
@@ -147,13 +146,11 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1]) {
         }
 
         ctx->peer = NULL;
-        fprintf(stderr, "INFO: Node(closed read): %s:%u\n", ip, port);
+        fprintf(stderr, "INFO: (peer closed read?): %s:%u\n", ip, port);
         return false;
     }
 
-    n_sent = send(fd_out, buff, n_recv, 0);
-
-    if (n_sent == SM3T__ERR) {
+    if ((n_sent = send(fd_out, buff, n_recv, 0)) == SM3T__ERR) {
         if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
             ctx->wpartial = true;
             ctx->wstart = 0;
@@ -167,17 +164,18 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1]) {
         if (peer != NULL) peer->peer = NULL;
 
         ctx->peer = NULL;
-        return false;
+        return true;
     }
 
     if (n_sent == 0) {
         if (peer != NULL) {
+            shutdown(peer->fd, SHUT_WR);
             peer->write_eof = true;
             peer->peer = NULL;
         }
 
         ctx->peer = NULL;
-        fprintf(stderr, "INFO: send returned 0 (peer closed?) for %s:%u\n", ip, port);
+        fprintf(stderr, "INFO: (peer closed write?) %s:%u\n", ip, port);
         return false;
     }
 
@@ -270,6 +268,7 @@ void sm3t__run_server(char *port) {
 
                     sm3t__set_nonblocking(server_sock);
                     ev.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP;
+
                     client_ctx->peer = server_ctx;
                     server_ctx->peer = client_ctx;
 
@@ -290,9 +289,9 @@ void sm3t__run_server(char *port) {
                     }
                 }
             }
-
-            cleanup_vec(dead_ctxs);
         }
+
+        cleanup_vec(dead_ctxs);
     }
 
     close(proxy_server);

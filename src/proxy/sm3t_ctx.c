@@ -6,15 +6,16 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 bool sm3t__append_vec(sm3t_vec_t *vec, sm3t_context_t const ctx[static 1]) {
     if (vec == NULL) {
-        if ((vec = malloc(sizeof(sm3t_vec_t) + sizeof(sm3t_context_t) * SM3T_VEC_MAX)) == NULL) SM3T__OUT_OF_MEMORY();
+        if ((vec = malloc(sizeof(sm3t_vec_t) + sizeof(sm3t_context_t *) * SM3T_VEC_MAX)) == NULL) SM3T__OUT_OF_MEMORY();
         vec->capacity = SM3T_VEC_MAX;
         vec->size = 0;
     } else if (vec->size == vec->capacity) {
         size_t capacity = vec->capacity * 2;
-        sm3t_vec_t *new_vec = realloc(vec, sizeof(sm3t_vec_t) + sizeof(sm3t_context_t) * capacity);
+        sm3t_vec_t *new_vec = realloc(vec, sizeof(sm3t_vec_t) + sizeof(sm3t_context_t *) * capacity);
         if (new_vec == NULL) SM3T__OUT_OF_MEMORY();
 
         vec = new_vec;
@@ -29,7 +30,8 @@ bool sm3t__append_vec(sm3t_vec_t *vec, sm3t_context_t const ctx[static 1]) {
 sm3t_context_t *sm3t__pop_vec(sm3t_context_t *ctx);
 
 void cleanup_vec(sm3t_vec_t *vec) {
-    for (int i = 0; i < vec->size; i++) {
+    if (vec == NULL) return;
+    for (size_t i = 0; i < vec->size; i++) {
         sm3r__cleanup_ctx(vec->data[i]);
     }
 

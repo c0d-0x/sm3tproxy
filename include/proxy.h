@@ -79,15 +79,14 @@ typedef enum {
 } sm3t_status_t;
 
 typedef struct sm3t_vec {
-    int size;
-    int capacity;
+    size_t size;
+    size_t capacity;
     sm3t_context_t *data[];
 } sm3t_vec_t;
 
-bool sm3t__append_vec(sm3t_vec_t *vec, sm3t_context_t const ctx[static 1]);
-sm3t_context_t *sm3t__pop_vec(sm3t_context_t *ctx);
 void cleanup_vec(sm3t_vec_t *vec);
 void destroy_vec(sm3t_vec_t *vec);
+bool sm3t__append_vec(sm3t_vec_t *vec, sm3t_context_t const ctx[static 1]);
 
 void sm3t__run_server(char *port);
 bool sm3t__set_nonblocking(int fd);
