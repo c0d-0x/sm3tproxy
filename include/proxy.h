@@ -53,7 +53,6 @@ typedef struct {
     char addr[INET6_ADDRSTRLEN];
 } sm3t_metadata_t;
 
-// NOTE: This context it mean to solve memory ownership with my recent context <=> conn.
 typedef struct sm3t_context_t {
     int fd;
     uint32_t events;
@@ -64,9 +63,9 @@ typedef struct sm3t_context_t {
     bool read_eof;
     bool write_eof;
 
-    int wlen;       // len of buffer left from a partial send
-    int wstart;     // start index of buffer to start sending
-    bool wpartial;  // set to true on partial send/write
+    int wlen;
+    int wstart;
+    bool wpartial;
 
     uint8_t buffer[];
 } sm3t_context_t;
@@ -84,15 +83,20 @@ typedef struct sm3t_vec {
     sm3t_context_t *data[];
 } sm3t_vec_t;
 
-void cleanup_vec(sm3t_vec_t *vec);
-void destroy_vec(sm3t_vec_t *vec);
-bool sm3t__append_vec(sm3t_vec_t *vec, sm3t_context_t const ctx[static 1]);
+void sm3t__cleanup_vec(sm3t_vec_t *vec);
+void sm3t__destroy_vec(sm3t_vec_t *vec);
+bool sm3t__vec_append(sm3t_vec_t **vec, sm3t_context_t *ctx);
 
 void sm3t__run_server(char *port);
 bool sm3t__set_nonblocking(int fd);
+bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd);
 int sm3t__connect_to_server(struct sockaddr_storage *server_addr, char *ip, int port);
-void sm3t__set_peer_info(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage);
+void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage);
+
+bool sm3t__remove_poll(int *epoll_fd, int fd);
+bool sm3t_modify_poll(int *epoll_fd, int fd, struct epoll_event *ev);
+bool sm3t__append_poll(int *epoll_fd, int fd, struct epoll_event *ev);
 
 sm3t_context_t *sm3t__new_ctx(void);
-void sm3r__cleanup_ctx(sm3t_context_t *ctx);
+void sm3t__cleanup_ctx(sm3t_context_t *ctx);
 #endif  // !PROXY_H
