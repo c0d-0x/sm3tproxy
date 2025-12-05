@@ -1,4 +1,15 @@
+
 #include "proxy.h"
+
+#ifndef LOGGER_IMPL
+#define LOGGER_IMPL
+#endif
+
+#ifndef LOG_USE_COLOR
+#define LOG_USE_COLOR
+#endif
+
+#include "logger.h"
 
 #include <errno.h>
 #include <stdint.h>
@@ -8,12 +19,12 @@
 bool sm3t__set_nonblocking(int fd) {
     int flags = 0;
     if ((flags = fcntl(fd, F_GETFL, 0)) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to get fd flags: %s\n", strerror(errno));
+        log_error("Failed to get fd flags: %s", strerror(errno));
         return false;
     }
 
     if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to set fd to non-blocking: %s\n", strerror(errno));
+        log_error("Failed to set fd to non-blocking: %s", strerror(errno));
         return false;
     }
 
@@ -22,8 +33,7 @@ bool sm3t__set_nonblocking(int fd) {
 
 bool sm3t__append_poll(int *epoll_fd, int fd, struct epoll_event *ev) {
     if (epoll_ctl(*epoll_fd, EPOLL_CTL_ADD, fd, ev) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to add fd to epoll list\n");
-        fprintf(stderr, "ERROR: Epoll: %s \n", strerror(errno));
+        log_error("Failed to add fd to epoll list: %s", strerror(errno));
         return false;
     }
     return true;
@@ -31,8 +41,8 @@ bool sm3t__append_poll(int *epoll_fd, int fd, struct epoll_event *ev) {
 
 bool sm3t__remove_poll(int *epoll_fd, int fd) {
     if (epoll_ctl(*epoll_fd, EPOLL_CTL_DEL, fd, NULL) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to remove fd to epoll list\n");
-        fprintf(stderr, "ERROR: Epoll: %s \n", strerror(errno));
+        log_error("Failed to remove fd to epoll list");
+        log_error("Epoll: %s ", strerror(errno));
         return false;
     }
     return true;
@@ -40,7 +50,7 @@ bool sm3t__remove_poll(int *epoll_fd, int fd) {
 
 bool sm3t_modify_poll(int *epoll_fd, int fd, struct epoll_event *ev) {
     if (epoll_ctl(*epoll_fd, EPOLL_CTL_MOD, fd, ev) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to modify fd in epoll list: %s\n", strerror(errno));
+        log_error("Failed to modify fd in epoll list: %s", strerror(errno));
         return false;
     }
     return true;
@@ -57,24 +67,24 @@ int sm3t__init_server(char *port) {
     hint.ai_flags = AI_PASSIVE;
 
     if ((status = getaddrinfo(NULL, port, &hint, &host)) != 0) {
-        fprintf(stderr, "ERROR: %s", gai_strerror(status));
+        log_error("%s", gai_strerror(status));
         return SM3T__ERR;
     }
 
     if ((sock_fd = socket(host->ai_family, host->ai_socktype, host->ai_protocol)) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to create a valid socke: %s", strerror(errno));
+        log_error("Failed to create a valid socke: %s", strerror(errno));
         freeaddrinfo(host);
         return SM3T__ERR;
     }
 
     if (setsockopt(sock_fd, SOL_IP, IP_TRANSPARENT, &(int) {1}, sizeof(int)) == SM3T__ERR
         || setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to set socket options: %s\n", strerror(errno));
+        log_error("Failed to set socket options: %s", strerror(errno));
         return SM3T__ERR;
     }
 
     if (bind(sock_fd, host->ai_addr, host->ai_addrlen) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to bind socket: %s\n", strerror(errno));
+        log_error("Failed to bind socket: %s", strerror(errno));
         freeaddrinfo(host);
         return SM3T__ERR;
     }
@@ -85,7 +95,7 @@ int sm3t__init_server(char *port) {
     }
 
     if (listen(sock_fd, BACKLOG) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to listen: %s\n", strerror(errno));
+        log_error("Failed to listen: %s", strerror(errno));
         freeaddrinfo(host);
         return SM3T__ERR;
     }
@@ -100,7 +110,7 @@ void sm3t__run_server(char *port) {
 
     int epoll_fd = epoll_create(BACKLOG);
     if (epoll_fd == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to create epoll instance\n");
+        log_error("Failed to create epoll instance");
         close(proxy_server);
         return;
     }
@@ -115,20 +125,21 @@ void sm3t__run_server(char *port) {
     sm3t_vec_t *dead_ctxs = NULL;
     struct epoll_event ev_list[MAX_EVENT] = {};
 
+    log_info("SM3TPROXY RUNNING ON PORT: %s", port);
     while (true) {
         int n_events = epoll_wait(epoll_fd, ev_list, MAX_EVENT, -1);
         if (n_events == SM3T__ERR) {
-            fprintf(stderr, "ERROR: epoll_wait failed\n");
+            log_error("epoll_wait failed");
             break;
         }
 
         for (int i = 0; i < n_events; i++) {
             if (ev_list[i].data.fd == proxy_server) {
-                fprintf(stderr, "INFO: New incoming connection\n");
+                log_info("New incoming connection");
 
                 int client_sock = accept(proxy_server, NULL, NULL);
                 if (client_sock == SM3T__ERR) {
-                    fprintf(stderr, "ERROR: accept failed: %s\n", strerror(errno));
+                    log_error("accept failed: %s", strerror(errno));
                     continue;
                 }
 
@@ -139,7 +150,7 @@ void sm3t__run_server(char *port) {
                 sm3t_context_t *server_ctx = sm3t__new_ctx();
 
                 if ((getpeername(client_sock, (struct sockaddr *) &client_addr, &client_addr_len)) == SM3T__ERR) {
-                    fprintf(stderr, "ERROR: Failed to get client addr\n");
+                    log_error("Failed to get client addr");
                     continue;
                 }
 
@@ -150,7 +161,7 @@ void sm3t__run_server(char *port) {
                 socklen_t server_addr_len = sizeof(server_addr);
                 if (getsockopt(client_sock, SOL_IP, SO_ORIGINAL_DST, (struct sockaddr *) &server_addr, &server_addr_len)
                     == SM3T__ERR) {
-                    fprintf(stderr, "ERROR: getsockopt SO_ORIGINAL_DST failed\n");
+                    log_error("getsockopt SO_ORIGINAL_DST failed");
                     continue;
                 }
 

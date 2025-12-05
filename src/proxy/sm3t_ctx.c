@@ -1,13 +1,15 @@
-#include <netinet/in.h>
 #include "proxy.h"
 
 #include <errno.h>
+#include <netinet/in.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#include "logger.h"
 
 sm3t_context_t *sm3t__new_ctx() {
     sm3t_context_t *ctx = malloc(sizeof(sm3t_context_t) + BUFFER_SIZE);
@@ -16,7 +18,7 @@ sm3t_context_t *sm3t__new_ctx() {
 }
 
 void sm3t__cleanup_ctx(sm3t_context_t *ctx) {
-    fprintf(stderr, "INFO: cleaning up ctx: %s:%u\n", ctx->meta.addr, ctx->meta.port);
+    log_info("Cleaning up ctx: %s:%u", ctx->meta.addr, ctx->meta.port);
     free(ctx);
 }
 
@@ -25,6 +27,7 @@ bool sm3t__vec_append(sm3t_vec_t **vec, sm3t_context_t *ctx) {
     if (*vec == NULL) {
         if ((*vec = malloc(sizeof(sm3t_vec_t) + sizeof(sm3t_context_t *) * SM3T_VEC_MAX)) == NULL)
             SM3T__OUT_OF_MEMORY();
+
         (*vec)->capacity = SM3T_VEC_MAX;
         (*vec)->size = 0;
     } else if ((*vec)->size == (*vec)->capacity) {
@@ -37,7 +40,6 @@ bool sm3t__vec_append(sm3t_vec_t **vec, sm3t_context_t *ctx) {
     }
 
     (*vec)->data[(*vec)->size++] = (sm3t_context_t *) ctx;
-
     return true;
 }
 
@@ -74,17 +76,17 @@ void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_stor
 int sm3t__connect_to_server(struct sockaddr_storage *server_addr, char *ip, int port) {
     int server_sock = SM3T__ERR;
     if ((server_sock = socket(server_addr->ss_family, SOCK_STREAM, 0)) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to create sever socket: %s\n", strerror(errno));
+        log_error("Failed to create sever socket: %s", strerror(errno));
         return SM3T__ERR;
     }
 
     if (connect(server_sock, (struct sockaddr *) server_addr, sizeof(*server_addr)) == SM3T__ERR) {
-        fprintf(stderr, "ERROR: Failed to connect to sever: %s:%d\n", ip, port);
-        fprintf(stderr, "ERROR: %s\n", strerror(errno));
+        log_error("Failed to connect to sever: %s:%d", ip, port);
+        log_error("%s", strerror(errno));
         return SM3T__ERR;
     }
 
-    fprintf(stderr, "INFO: Connection to: %s:%d established\n", ip, port);
+    log_info("Connection to: %s:%d established", ip, port);
     return server_sock;
 }
 
@@ -117,7 +119,7 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
         }
 
         ctx->peer = NULL;
-        fprintf(stderr, "INFO: Node(HUP): %s:%u\n", ip, port);
+        log_info("Node(HUP): %s:%u", ip, port);
         return false;
     }
 
@@ -125,7 +127,7 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
         if ((n_sent = send(ctx->fd, ctx->buffer + ctx->wstart, ctx->wlen, 0)) == SM3T__ERR) {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;
 
-            fprintf(stderr, "ERROR: Failed to send queued data to %s:%u: %s\n", ip, port, strerror(errno));
+            log_error("Failed to send queued data to %s:%u: %s", ip, port, strerror(errno));
             if (peer != NULL) peer->peer = NULL;
 
             ctx->peer = NULL;
@@ -139,7 +141,7 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
             if (peer != NULL) peer->peer = NULL;
 
             ctx->peer = NULL;
-            fprintf(stderr, "INFO: Peer closed write %s:%u\n", ip, port);
+            log_info("Peer closed write %s:%u", ip, port);
             return false;
         }
 
@@ -156,7 +158,7 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
             struct epoll_event ev_peer = {.events = EPOLLIN | EPOLLRDHUP, .data.ptr = peer};
             sm3t_modify_poll(&epoll_fd, peer->fd, &ev_peer);
 
-            fprintf(stderr, "INFO: Finished sending queued data to %s:%u\n", ip, port);
+            log_info("Finished sending queued data to %s:%u", ip, port);
         }
 
         return true;
@@ -166,7 +168,7 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
     if ((n_recv = recv(fd_in, buff, BUFFER_SIZE - 1, 0)) == SM3T__ERR) {
         if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;
 
-        fprintf(stderr, "ERROR: Failed to recv data from %s:%u: %s\n", ip, port, strerror(errno));
+        log_error("Failed to recv data from %s:%u: %s", ip, port, strerror(errno));
         return false;
     }
 
@@ -181,7 +183,7 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
         }
 
         ctx->peer = NULL;
-        fprintf(stderr, "INFO: Peer closed read: %s:%u\n", ip, port);
+        log_info("Peer closed read: %s:%u", ip, port);
         return false;
     }
 
@@ -200,12 +202,11 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
             struct epoll_event ev_peer = {.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP, .data.ptr = peer};
             sm3t_modify_poll(&epoll_fd, peer->fd, &ev_peer);
 
-            fprintf(stderr, "WARN: Would block, queued %zd bytes for %s:%u\n", n_recv, peer->meta.addr,
-                    peer->meta.port);
+            log_warn("Would block, queued %zd bytes for %s:%u", n_recv, peer->meta.addr, peer->meta.port);
             return true;
         }
 
-        fprintf(stderr, "ERROR: Failed to send data to %s:%u: %s\n", ip, port, strerror(errno));
+        log_error("Failed to send data to %s:%u: %s", ip, port, strerror(errno));
         if (peer != NULL) peer->peer = NULL;
 
         ctx->peer = NULL;
@@ -220,7 +221,7 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
         }
 
         ctx->peer = NULL;
-        fprintf(stderr, "INFO: Peer closed write %s:%u\n", ip, port);
+        log_info("Peer closed write %s:%u", ip, port);
         return false;
     }
 
@@ -240,7 +241,7 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
         struct epoll_event ev_peer = {.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP, .data.ptr = peer};
         sm3t_modify_poll(&epoll_fd, peer->fd, &ev_peer);
 
-        fprintf(stderr, "WARN: Partial send, queued %d bytes for %s:%u\n", remaining, peer->meta.addr, peer->meta.port);
+        log_warn("Partial send, queued %d bytes for %s:%u", remaining, peer->meta.addr, peer->meta.port);
         return true;
     }
 

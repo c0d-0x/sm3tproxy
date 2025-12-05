@@ -1,6 +1,6 @@
 CC             = gcc
 
-CFLAGS         ?= -Wall -g -std=c23 -Wextra -Wformat-security -Wformat-overflow=2 -O2
+CFLAGS         ?= -Wall -g -std=c23 -Wextra -Wformat-security -Wformat-overflow=2 -fsanitize=address -fno-omit-frame-pointer -g
 
 INCLUDE        ?= -Iinclude -Ilib
 
@@ -40,7 +40,7 @@ clean-nat:
 	-$(NAT) $(CLEANUP)
 
 run:
-	-$(SET_GROUP) $(SM3T_GROUP) $(BIN)
+	-@$(SET_GROUP) $(SM3T_GROUP) $(BIN)
 	
 .PHONY:  test all clean install uninstall
 
