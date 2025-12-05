@@ -1,6 +1,6 @@
 /**
  * Copyright (c) 2025 JeepWay
- * HERE:
+ * HERE: https://github.com/JeepWay/logger-c
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -319,3 +319,4 @@ void no_color_fmt2(record_t *rec, const char *time_buf) {
 #endif  // LOGGER_IMPL
 
 #endif
+
