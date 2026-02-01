@@ -1,15 +1,6 @@
 #ifndef PROXY_H
 #define PROXY_H
 
-#include <stddef.h>
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
-
-#ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 200112L
-#endif
-
 #include <arpa/inet.h>
 #include <asm-generic/errno-base.h>
 #include <assert.h>
@@ -19,34 +10,33 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "conf.h"
 #ifndef DEFAULT_PORT
 #define DEFAULT_PORT "8080"
 #endif
-
+#ifndef BACKLOG
 #define BACKLOG 10
+#endif
+
+#ifndef BUFFER_SIZE
 #define BUFFER_SIZE 1024
+#endif  // !BUFFER_SIZE
 
+#ifndef MAX_EVENT
 #define MAX_EVENT 5
+#endif  // !MAX_EVENT
+
+#ifndef SM3T_VEC_MAX
+
 #define SM3T_VEC_MAX 16
-
-#define SM3T__FATAL(...)              \
-    do {                              \
-        fprintf(stderr, "ERROR: ");   \
-        fprintf(stderr, __VA_ARGS__); \
-        fprintf(stderr, "\n");        \
-        exit(EXIT_FAILURE);           \
-    } while (0)
-
-#define SM3T__OUT_OF_MEMORY() SM3T__FATAL("Process out of memory")
+#endif  // !SM3T_VEC_MAX
 
 typedef struct {
     int port;
@@ -87,11 +77,11 @@ void sm3t__cleanup_vec(sm3t_vec_t *vec);
 void sm3t__destroy_vec(sm3t_vec_t *vec);
 bool sm3t__vec_append(sm3t_vec_t **vec, sm3t_context_t *ctx);
 
-void sm3t__run_server(char *port);
 bool sm3t__set_nonblocking(int fd);
-bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd);
+void sm3t__run_server(sm3t_conf_t *conf);
+bool sm3t__ttcp_ctx_handler(void *ctx, int epoll_fd);
 int sm3t__connect_to_server(struct sockaddr_storage *server_addr, char *ip, int port);
-void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage);
+void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage, bool debug);
 
 bool sm3t__remove_poll(int *epoll_fd, int fd);
 bool sm3t_modify_poll(int *epoll_fd, int fd, struct epoll_event *ev);

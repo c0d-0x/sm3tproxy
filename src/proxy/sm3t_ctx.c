@@ -1,4 +1,12 @@
+#include "core.h"
 #include "proxy.h"
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200112L
+#endif
 
 #include <errno.h>
 #include <netinet/in.h>
@@ -6,6 +14,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -54,13 +63,17 @@ void sm3t__cleanup_vec(sm3t_vec_t *vec) {
 
 void sm3t__destroy_vec(sm3t_vec_t *vec) { free(vec); }
 
-void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage) {
+void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage, bool debug) {
     struct sockaddr_in6 *addr6_nt = NULL;
     struct sockaddr_in *addr_nt = NULL;
-    if (addr_storage->ss_family == AF_INET6) {
-        addr6_nt = (struct sockaddr_in6 *) addr_storage;
-    } else {
-        addr_nt = (struct sockaddr_in *) addr_storage;
+
+    if (addr_storage->ss_family == AF_INET6) addr6_nt = (struct sockaddr_in6 *) addr_storage;
+    else addr_nt = (struct sockaddr_in *) addr_storage;
+
+    if (!debug) {
+        strcpy(ctx->meta.addr, "<<IP>> ");
+        ctx->meta.port = ntohs((addr_storage->ss_family == AF_INET6) ? addr6_nt->sin6_port : addr_nt->sin_port);
+        return;
     }
 
     void *addr = (addr_storage->ss_family == AF_INET6) ? (void *) &addr6_nt->sin6_addr : (void *) &addr_nt->sin_addr;
@@ -69,7 +82,6 @@ void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_stor
 
     ctx->meta.port = ntohs(port);
     inet_ntop(addr_storage->ss_family, addr, ctx->meta.addr, addr_len);
-
     ctx->meta.port = ntohs(port);
 }
 
@@ -90,7 +102,10 @@ int sm3t__connect_to_server(struct sockaddr_storage *server_addr, char *ip, int 
     return server_sock;
 }
 
-bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
+// Transparent TCP context handler
+bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
+    if (context == NULL) return true;
+    sm3t_context_t *ctx = (sm3t_context_t *) context;
     ssize_t n_recv = 0;
     ssize_t n_sent = 0;
 
@@ -129,7 +144,6 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
 
             log_error("Failed to send queued data to %s:%u: %s", ip, port, strerror(errno));
             if (peer != NULL) peer->peer = NULL;
-
             ctx->peer = NULL;
             return false;
         }
@@ -139,8 +153,8 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
             ctx->write_eof = true;
 
             if (peer != NULL) peer->peer = NULL;
-
             ctx->peer = NULL;
+
             log_info("Peer closed write %s:%u", ip, port);
             return false;
         }
@@ -149,8 +163,8 @@ bool sm3t__handle_context(sm3t_context_t ctx[static 1], int epoll_fd) {
         ctx->wlen -= n_sent;
 
         if (ctx->wlen == 0) {
-            ctx->wpartial = false;
             ctx->wstart = 0;
+            ctx->wpartial = false;
 
             struct epoll_event ev_self = {.events = EPOLLIN | EPOLLRDHUP, .data.ptr = ctx};
             sm3t_modify_poll(&epoll_fd, ctx->fd, &ev_self);

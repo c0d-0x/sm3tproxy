@@ -319,4 +319,3 @@ void no_color_fmt2(record_t *rec, const char *time_buf) {
 #endif  // LOGGER_IMPL
 
 #endif
-
