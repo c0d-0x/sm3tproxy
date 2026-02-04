@@ -1,6 +1,8 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 
+#include <stdint.h>
+#include "conf.h"
 #endif
 
 #ifndef _POSIX_C_SOURCE
@@ -66,9 +68,16 @@ bool sm3t_modify_poll(int *epoll_fd, int fd, struct epoll_event *ev) {
     return true;
 }
 
-static int sm3t__init_server(char *port, sm3t_server_mode_t mode) {
+static int sm3t__init_server(sm3t_conf_t *conf) {
     struct addrinfo *host = NULL;
     struct addrinfo hint = {};
+    sm3t_server_mode_t mode = conf->mode;
+    bool transparent = conf->tcp_proxy.interception.transparent;
+
+    // TODO: Convert port to string for getaddrinfo.
+    //  const char *port = (conf->tcp_proxy.listen.port);
+    const char *port = "8080";
+
     int sock_fd;
     int status;
 
@@ -89,7 +98,7 @@ static int sm3t__init_server(char *port, sm3t_server_mode_t mode) {
             goto RETRY;
         }
 
-        if (mode == SM3T__TRANSPARENT_TCP_PROXY) {
+        if (mode == SM3T__TCP_PROXY && transparent) {
             if (setsockopt(sock_fd, SOL_IP, IP_TRANSPARENT, &(int) {1}, sizeof(int)) == SM3T__ERR) {
                 log_error("Failed to make socket transparent: %s", strerror(errno));
                 close(sock_fd);
@@ -98,7 +107,7 @@ static int sm3t__init_server(char *port, sm3t_server_mode_t mode) {
         }
 
         if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) == SM3T__ERR) {
-            log_error("Failed server addr reusable: %s", strerror(errno));
+            log_error("Failed server addr reusabl: %s", strerror(errno));
             close(sock_fd);
             goto RETRY;
         }
@@ -128,7 +137,7 @@ static int sm3t__init_server(char *port, sm3t_server_mode_t mode) {
 }
 
 void sm3t__run_server(sm3t_conf_t *conf) {
-    int proxy_server = sm3t__init_server(conf->port, conf->mode);
+    int proxy_server = sm3t__init_server(conf);
     if (proxy_server == SM3T__ERR) return;
 
     int epoll_fd = epoll_create(BACKLOG);
@@ -148,10 +157,13 @@ void sm3t__run_server(sm3t_conf_t *conf) {
     sm3t_vec_t *dead_ctxs = NULL;
     struct epoll_event ev_list[MAX_EVENT] = {};
 
-    log_info("SM3TPROXY RUNNING ON PORT: %s", conf->port);
+    log_info("SM3TPROXY RUNNING ON PORT: %u", conf->tcp_proxy.listen.port);
     while (true) {
         int n_events = epoll_wait(epoll_fd, ev_list, MAX_EVENT, -1);
-        if (n_events == SM3T__ERR) SM3T__FATAL("Failed to make reseption for events");
+        if (n_events == SM3T__ERR) {
+            sm3t__cleanup_vec(dead_ctxs, sm3t__cleanup_ctx);
+            SM3T__FATAL("Failed to make reseption for events");
+        }
 
         for (int i = 0; i < n_events; i++) {
             if (ev_list[i].data.fd == proxy_server) {
@@ -175,7 +187,7 @@ void sm3t__run_server(sm3t_conf_t *conf) {
                 }
 
                 sm3t__set_nonblocking(client_sock);
-                sm3t__set_peer_meta(client_ctx, &client_addr, conf->debug);
+                sm3t__set_peer_meta(client_ctx, &client_addr, conf->global.logging.log_address);
 
                 struct sockaddr_storage server_addr = {};
                 socklen_t server_addr_len = sizeof(server_addr);
@@ -185,7 +197,7 @@ void sm3t__run_server(sm3t_conf_t *conf) {
                     continue;
                 }
 
-                sm3t__set_peer_meta(server_ctx, &server_addr, conf->debug);
+                sm3t__set_peer_meta(server_ctx, &server_addr, conf->global.logging.log_address);
                 int server_sock = sm3t__connect_to_server(&server_addr, server_ctx->meta.addr, server_ctx->meta.port);
                 if (server_sock == SM3T__ERR) {
                     continue;
@@ -208,14 +220,15 @@ void sm3t__run_server(sm3t_conf_t *conf) {
             } else {
                 sm3t_context_t *ctx = ev_list[i].data.ptr;
                 ctx->events = ev_list[i].events;
-                if (!conf->handler(ctx, epoll_fd)) {
+                // TODO: More generic later on
+                if (!conf->tcp_proxy.interception.ctx_handler(ctx, epoll_fd)) {
                     sm3t__remove_poll(&epoll_fd, ctx->fd);
                     sm3t__vec_append(&dead_ctxs, ctx);
                 }
             }
         }
 
-        sm3t__cleanup_vec(dead_ctxs);
+        sm3t__cleanup_vec(dead_ctxs, sm3t__cleanup_ctx);
     }
 
     close(proxy_server);

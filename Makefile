@@ -40,7 +40,7 @@ clean-nat:
 	-$(NAT) $(CLEANUP)
 
 run:
-	-@$(SET_GROUP) $(SM3T_GROUP) $(BIN) --debug
+	-@$(SET_GROUP) $(SM3T_GROUP) "$(BIN) --debug"
 	
 .PHONY:  test all clean install uninstall
 

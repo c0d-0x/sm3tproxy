@@ -26,42 +26,11 @@ sm3t_context_t *sm3t__new_ctx() {
     return ctx;
 }
 
-void sm3t__cleanup_ctx(sm3t_context_t *ctx) {
+void sm3t__cleanup_ctx(void *context) {
+    sm3t_context_t *ctx = (sm3t_context_t *) context;
     log_info("Cleaning up ctx: %s:%u", ctx->meta.addr, ctx->meta.port);
     free(ctx);
 }
-
-bool sm3t__vec_append(sm3t_vec_t **vec, sm3t_context_t *ctx) {
-    if (ctx == NULL) return false;
-    if (*vec == NULL) {
-        if ((*vec = malloc(sizeof(sm3t_vec_t) + sizeof(sm3t_context_t *) * SM3T_VEC_MAX)) == NULL)
-            SM3T__OUT_OF_MEMORY();
-
-        (*vec)->capacity = SM3T_VEC_MAX;
-        (*vec)->size = 0;
-    } else if ((*vec)->size == (*vec)->capacity) {
-        size_t capacity = (*vec)->capacity * 2;
-        sm3t_vec_t *new_vec = realloc(*vec, sizeof(sm3t_vec_t) + sizeof(sm3t_context_t *) * capacity);
-        if (new_vec == NULL) SM3T__OUT_OF_MEMORY();
-
-        *vec = new_vec;
-        (*vec)->capacity = capacity;
-    }
-
-    (*vec)->data[(*vec)->size++] = (sm3t_context_t *) ctx;
-    return true;
-}
-
-void sm3t__cleanup_vec(sm3t_vec_t *vec) {
-    if (vec == NULL) return;
-    for (size_t i = 0; i < vec->size; i++) {
-        sm3t__cleanup_ctx(vec->data[i]);
-    }
-
-    vec->size = 0;
-}
-
-void sm3t__destroy_vec(sm3t_vec_t *vec) { free(vec); }
 
 void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage, bool debug) {
     struct sockaddr_in6 *addr6_nt = NULL;
@@ -116,7 +85,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
         return false;
     }
 
-    char *ip = ctx->meta.addr;
+    char *address = ctx->meta.addr;
     uint32_t port = ctx->meta.port;
     int fd_in = ctx->fd;
     sm3t_context_t *peer = ctx->peer;
@@ -134,7 +103,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
         }
 
         ctx->peer = NULL;
-        log_info("Node(HUP): %s:%u", ip, port);
+        log_info("Node(HUP): %s:%u", address, port);
         return false;
     }
 
@@ -142,7 +111,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
         if ((n_sent = send(ctx->fd, ctx->buffer + ctx->wstart, ctx->wlen, 0)) == SM3T__ERR) {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;
 
-            log_error("Failed to send queued data to %s:%u: %s", ip, port, strerror(errno));
+            log_error("Failed to send queued data to %s:%u: %s", address, port, strerror(errno));
             if (peer != NULL) peer->peer = NULL;
             ctx->peer = NULL;
             return false;
@@ -155,7 +124,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
             if (peer != NULL) peer->peer = NULL;
             ctx->peer = NULL;
 
-            log_info("Peer closed write %s:%u", ip, port);
+            log_info("Peer closed write %s:%u", address, port);
             return false;
         }
 
@@ -172,7 +141,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
             struct epoll_event ev_peer = {.events = EPOLLIN | EPOLLRDHUP, .data.ptr = peer};
             sm3t_modify_poll(&epoll_fd, peer->fd, &ev_peer);
 
-            log_info("Finished sending queued data to %s:%u", ip, port);
+            log_info("Finished sending queued data to %s:%u", address, port);
         }
 
         return true;
@@ -182,7 +151,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
     if ((n_recv = recv(fd_in, buff, BUFFER_SIZE - 1, 0)) == SM3T__ERR) {
         if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;
 
-        log_error("Failed to recv data from %s:%u: %s", ip, port, strerror(errno));
+        log_error("Failed to recv data from %s:%u: %s", address, port, strerror(errno));
         return false;
     }
 
@@ -197,7 +166,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
         }
 
         ctx->peer = NULL;
-        log_info("Peer closed read: %s:%u", ip, port);
+        log_info("Peer closed read: %s:%u", address, port);
         return false;
     }
 
@@ -220,7 +189,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
             return true;
         }
 
-        log_error("Failed to send data to %s:%u: %s", ip, port, strerror(errno));
+        log_error("Failed to send data to %s:%u: %s", address, port, strerror(errno));
         if (peer != NULL) peer->peer = NULL;
 
         ctx->peer = NULL;
@@ -235,7 +204,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
         }
 
         ctx->peer = NULL;
-        log_info("Peer closed write %s:%u", ip, port);
+        log_info("Peer closed write %s:%u", address, port);
         return false;
     }
 

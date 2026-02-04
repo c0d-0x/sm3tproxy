@@ -19,7 +19,7 @@
 
 #include "conf.h"
 #ifndef DEFAULT_PORT
-#define DEFAULT_PORT "8080"
+#define DEFAULT_PORT 8080
 #endif
 #ifndef BACKLOG
 #define BACKLOG 10
@@ -32,11 +32,6 @@
 #ifndef MAX_EVENT
 #define MAX_EVENT 5
 #endif  // !MAX_EVENT
-
-#ifndef SM3T_VEC_MAX
-
-#define SM3T_VEC_MAX 16
-#endif  // !SM3T_VEC_MAX
 
 typedef struct {
     int port;
@@ -67,16 +62,6 @@ typedef enum {
     SM3T__ERR_PROTOCOL = -3
 } sm3t_status_t;
 
-typedef struct sm3t_vec {
-    size_t size;
-    size_t capacity;
-    sm3t_context_t *data[];
-} sm3t_vec_t;
-
-void sm3t__cleanup_vec(sm3t_vec_t *vec);
-void sm3t__destroy_vec(sm3t_vec_t *vec);
-bool sm3t__vec_append(sm3t_vec_t **vec, sm3t_context_t *ctx);
-
 bool sm3t__set_nonblocking(int fd);
 void sm3t__run_server(sm3t_conf_t *conf);
 bool sm3t__ttcp_ctx_handler(void *ctx, int epoll_fd);
@@ -88,5 +73,5 @@ bool sm3t_modify_poll(int *epoll_fd, int fd, struct epoll_event *ev);
 bool sm3t__append_poll(int *epoll_fd, int fd, struct epoll_event *ev);
 
 sm3t_context_t *sm3t__new_ctx(void);
-void sm3t__cleanup_ctx(sm3t_context_t *ctx);
+void sm3t__cleanup_ctx(void *ctx);
 #endif  // !PROXY_H
