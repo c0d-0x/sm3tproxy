@@ -221,7 +221,7 @@ void sm3t__run_server(sm3t_conf_t *conf) {
                 sm3t_context_t *ctx = ev_list[i].data.ptr;
                 ctx->events = ev_list[i].events;
                 // TODO: More generic later on
-                if (!conf->tcp_proxy.interception.ctx_handler(ctx, epoll_fd)) {
+                if (!conf->ctx_handler_vtable[conf->mode](ctx, epoll_fd)) {
                     sm3t__remove_poll(&epoll_fd, ctx->fd);
                     sm3t__vec_append(&dead_ctxs, ctx);
                 }

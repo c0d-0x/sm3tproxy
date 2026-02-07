@@ -1,8 +1,9 @@
-
-#include <args.h>
-#include <core.h>
-#include <proxy.h>
 #include <stdint.h>
+
+#include "args.h"
+#include "conf.h"
+#include "core.h"
+#include "proxy.h"
 
 // TODO: Drop unnecessary CAPS
 void print_help(Args *a, const char *program) {
@@ -25,7 +26,7 @@ int main(int argc, char *argv[]) {
     parse_args(&cmd_arg, argc, argv, &positional_args);
     sm3t_conf_t *conf = &(sm3t_conf_t) {.mode = SM3T__TCP_PROXY,
                                         .tcp_proxy.listen.port = (uint16_t) *port,
-                                        .tcp_proxy.interception.ctx_handler = sm3t__ttcp_ctx_handler,
+                                        .ctx_handler_vtable[SM3T__TCP_PROXY] = sm3t__ttcp_ctx_handler,
                                         .global.logging.log_address = *debug};
     sm3t__run_server(conf);
     return EXIT_SUCCESS;

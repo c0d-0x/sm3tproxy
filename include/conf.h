@@ -11,6 +11,7 @@ typedef enum : uint8_t {
     SM3T__HTTP_SERVER,
     SM3T__CUSTOM_SERVER,
     SM3T__TCP_PROXY,
+    SM3t__MODE_COUNT
 } sm3t_server_mode_t;
 
 typedef enum : uint8_t {
@@ -56,6 +57,7 @@ typedef enum : uint8_t {
 typedef struct {
     // TODO: Very nested, more refactorn
     sm3t_server_mode_t mode;
+    sm3t_ctx_handler_t ctx_handler_vtable[SM3t__MODE_COUNT];
     struct {
         char *name;
         char *version;
@@ -80,7 +82,6 @@ typedef struct {
 
         struct {
             bool transparent;
-            sm3t_ctx_handler_t ctx_handler;
             struct {
                 sm3t_orig_dest_policy_t policy;
             } original_dest;

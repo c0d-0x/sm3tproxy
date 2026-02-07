@@ -13,7 +13,7 @@ bool sm3t__vec_append(sm3t_vec_t **vec, void *data) {
         (*vec)->size = 0;
     } else if ((*vec)->size == (*vec)->capacity) {
         size_t capacity = (*vec)->capacity * 2;
-        sm3t_vec_t *new_vec = realloc(*vec, sizeof(*data) + sizeof(*data) * capacity);
+        sm3t_vec_t *new_vec = realloc(*vec, sizeof(sm3t_vec_t) + sizeof(data) * capacity);
         if (new_vec == NULL) SM3T__OUT_OF_MEMORY();
 
         *vec = new_vec;
