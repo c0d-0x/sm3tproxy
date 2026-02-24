@@ -1,8 +1,6 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
-
-#include <stdint.h>
-#include "conf.h"
+#include <stdio.h>
 #endif
 
 #ifndef _POSIX_C_SOURCE
@@ -20,10 +18,12 @@
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <stdint.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "conf.h"
 #include "core.h"
 #include "logger.h"
 #include "proxy.h"
@@ -72,12 +72,10 @@ static int sm3t__init_server(sm3t_conf_t *conf) {
     struct addrinfo *host = NULL;
     struct addrinfo hint = {};
     sm3t_server_mode_t mode = conf->mode;
-    bool transparent = conf->tcp_proxy.interception.transparent;
+    bool transparent = conf->tcp.interception.transparent;
 
-    // TODO: Convert port to string for getaddrinfo.
-    //  const char *port = (conf->tcp_proxy.listen.port);
-    const char *port = "8080";
-
+    char port[8] = {};
+    sprintf(port, "%u", conf->tcp.listen.port);
     int sock_fd;
     int status;
 
@@ -157,11 +155,12 @@ void sm3t__run_server(sm3t_conf_t *conf) {
     sm3t_vec_t *dead_ctxs = NULL;
     struct epoll_event ev_list[MAX_EVENT] = {};
 
-    log_info("SM3TPROXY RUNNING ON PORT: %u", conf->tcp_proxy.listen.port);
+    log_info("SM3TPROXY RUNNING ON PORT: %04u", conf->tcp.listen.port);
     while (true) {
         int n_events = epoll_wait(epoll_fd, ev_list, MAX_EVENT, -1);
         if (n_events == SM3T__ERR) {
             sm3t__cleanup_vec(dead_ctxs, sm3t__cleanup_ctx);
+            sm3t__destroy_vec(dead_ctxs);
             SM3T__FATAL("Failed to make reseption for events");
         }
 
@@ -171,7 +170,7 @@ void sm3t__run_server(sm3t_conf_t *conf) {
 
                 int client_sock = accept(proxy_server, NULL, NULL);
                 if (client_sock == SM3T__ERR) {
-                    log_error("accept failed: %s", strerror(errno));
+                    log_error("Failed accept connection: %s", strerror(errno));
                     continue;
                 }
 
@@ -221,7 +220,7 @@ void sm3t__run_server(sm3t_conf_t *conf) {
                 sm3t_context_t *ctx = ev_list[i].data.ptr;
                 ctx->events = ev_list[i].events;
                 // TODO: More generic later on
-                if (!conf->ctx_handler_vtable[conf->mode](ctx, epoll_fd)) {
+                if (!conf->ctx_vtable[conf->mode](ctx, epoll_fd)) {
                     sm3t__remove_poll(&epoll_fd, ctx->fd);
                     sm3t__vec_append(&dead_ctxs, ctx);
                 }
@@ -231,6 +230,7 @@ void sm3t__run_server(sm3t_conf_t *conf) {
         sm3t__cleanup_vec(dead_ctxs, sm3t__cleanup_ctx);
     }
 
-    close(proxy_server);
     close(epoll_fd);
+    close(proxy_server);
+    sm3t__destroy_vec(dead_ctxs);
 }
