@@ -63,7 +63,7 @@ make clean
 
 - [x] Event driven processing with epoll.
 - [x] Transparent TCP proxy.
-- [ ] HTTP request and response parsing.
+- [ ] HTTP request and response parsing (changed my mind :/).
 - [ ] Logging of requests, headers, and payloads.
 - [ ] Rule-based traffic filtering (domain, keyword, method) with cli/ a config file.
 - [ ] Optional HTTPS interception using OpenSSL.

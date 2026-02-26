@@ -21,7 +21,7 @@
 #include "logger.h"
 
 sm3t_context_t *sm3t__new_ctx() {
-    sm3t_context_t *ctx = malloc(sizeof(sm3t_context_t) + BUFFER_SIZE);
+    sm3t_context_t *ctx = malloc(sizeof(sm3t_context_t) + SM3T_BUFFER_SIZE);
     if (ctx == NULL) SM3T__OUT_OF_MEMORY();
     return ctx;
 }
@@ -54,7 +54,7 @@ void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_stor
     ctx->meta.port = ntohs(port);
 }
 
-int sm3t__connect_to_server(struct sockaddr_storage *server_addr, char *ip, int port) {
+int sm3t__connect_upstream(struct sockaddr_storage *server_addr, char *ip, int port) {
     int server_sock = SM3T__ERR;
     if ((server_sock = socket(server_addr->ss_family, SOCK_STREAM, 0)) == SM3T__ERR) {
         log_error("Failed to create sever socket: %s", strerror(errno));
@@ -67,7 +67,7 @@ int sm3t__connect_to_server(struct sockaddr_storage *server_addr, char *ip, int 
         return SM3T__ERR;
     }
 
-    log_info("Connection to: %s:%04d established", ip, port);
+    log_info("Upstream: %s:%04d established", ip, port);
     return server_sock;
 }
 
@@ -148,7 +148,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
     }
 
     if (!(ctx->events & EPOLLIN) || peer->wpartial) return true;
-    if ((n_recv = recv(fd_in, buff, BUFFER_SIZE - 1, 0)) == SM3T__ERR) {
+    if ((n_recv = recv(fd_in, buff, SM3T_BUFFER_SIZE - 1, 0)) == SM3T__ERR) {
         if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;
 
         log_error("Failed to recv data from %s:%04u: %s", address, port, strerror(errno));

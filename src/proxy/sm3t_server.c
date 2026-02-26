@@ -28,51 +28,9 @@
 #include "logger.h"
 #include "proxy.h"
 
-bool sm3t__set_nonblocking(int fd) {
-    int flags = 0;
-    if ((flags = fcntl(fd, F_GETFL, 0)) == SM3T__ERR) {
-        log_error("Failed to get fd flags: %s", strerror(errno));
-        return false;
-    }
-
-    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == SM3T__ERR) {
-        log_error("Failed to set fd to non-blocking: %s", strerror(errno));
-        return false;
-    }
-
-    return true;
-}
-
-bool sm3t__append_poll(int *epoll_fd, int fd, struct epoll_event *ev) {
-    if (epoll_ctl(*epoll_fd, EPOLL_CTL_ADD, fd, ev) == SM3T__ERR) {
-        log_error("Failed to add fd to epoll list: %s", strerror(errno));
-        return false;
-    }
-    return true;
-}
-
-bool sm3t__remove_poll(int *epoll_fd, int fd) {
-    if (epoll_ctl(*epoll_fd, EPOLL_CTL_DEL, fd, NULL) == SM3T__ERR) {
-        log_error("Failed to remove fd to epoll list");
-        log_error("Epoll: %s ", strerror(errno));
-        return false;
-    }
-    return true;
-}
-
-bool sm3t_modify_poll(int *epoll_fd, int fd, struct epoll_event *ev) {
-    if (epoll_ctl(*epoll_fd, EPOLL_CTL_MOD, fd, ev) == SM3T__ERR) {
-        log_error("Failed to modify fd in epoll list: %s", strerror(errno));
-        return false;
-    }
-    return true;
-}
-
 static int sm3t__init_server(sm3t_conf_t *conf) {
     struct addrinfo *host = NULL;
     struct addrinfo hint = {};
-    sm3t_server_mode_t mode = conf->mode;
-    bool transparent = conf->tcp.interception.transparent;
 
     char port[8] = {};
     sprintf(port, "%u", conf->tcp.listen.port);
@@ -96,7 +54,7 @@ static int sm3t__init_server(sm3t_conf_t *conf) {
             goto RETRY;
         }
 
-        if (mode == SM3T__TCP_PROXY && transparent) {
+        if (conf->mode == SM3T__MODE_TRANSPARENT) {
             if (setsockopt(sock_fd, SOL_IP, IP_TRANSPARENT, &(int) {1}, sizeof(int)) == SM3T__ERR) {
                 log_error("Failed to make socket transparent: %s", strerror(errno));
                 close(sock_fd);
@@ -126,7 +84,7 @@ static int sm3t__init_server(sm3t_conf_t *conf) {
         return SM3T__ERR;
     }
 
-    if (listen(sock_fd, BACKLOG) == SM3T__ERR) {
+    if (listen(sock_fd, SM3T_BACKLOG) == SM3T__ERR) {
         log_error("Failed to listen: %s", strerror(errno));
         return SM3T__ERR;
     }
@@ -138,7 +96,7 @@ void sm3t__run_server(sm3t_conf_t *conf) {
     int proxy_server = sm3t__init_server(conf);
     if (proxy_server == SM3T__ERR) return;
 
-    int epoll_fd = epoll_create(BACKLOG);
+    int epoll_fd = epoll_create(SM3T_BACKLOG);
     if (epoll_fd == SM3T__ERR) {
         log_error("Failed to create epoll instance");
         close(proxy_server);
@@ -153,11 +111,11 @@ void sm3t__run_server(sm3t_conf_t *conf) {
     }
 
     sm3t_vec_t *dead_ctxs = NULL;
-    struct epoll_event ev_list[MAX_EVENT] = {};
+    struct epoll_event ev_list[SM3T_MAX_EVENT] = {};
 
     log_info("SM3TPROXY RUNNING ON PORT: %04u", conf->tcp.listen.port);
     while (true) {
-        int n_events = epoll_wait(epoll_fd, ev_list, MAX_EVENT, -1);
+        int n_events = epoll_wait(epoll_fd, ev_list, SM3T_MAX_EVENT, -1);
         if (n_events == SM3T__ERR) {
             sm3t__cleanup_vec(dead_ctxs, sm3t__cleanup_ctx);
             sm3t__destroy_vec(dead_ctxs);
@@ -197,7 +155,7 @@ void sm3t__run_server(sm3t_conf_t *conf) {
                 }
 
                 sm3t__set_peer_meta(server_ctx, &server_addr, conf->global.logging.log_address);
-                int server_sock = sm3t__connect_to_server(&server_addr, server_ctx->meta.addr, server_ctx->meta.port);
+                int server_sock = sm3t__connect_upstream(&server_addr, server_ctx->meta.addr, server_ctx->meta.port);
                 if (server_sock == SM3T__ERR) {
                     continue;
                 }

@@ -7,10 +7,8 @@
 typedef bool (*sm3t_ctx_handler_t)(void *, int);
 
 typedef enum : uint8_t {
-    SM3T__HTTP_PROXY,
-    SM3T__HTTP_SERVER,
-    SM3T__CUSTOM_SERVER,
-    SM3T__TCP_PROXY,
+    SM3T__MODE_PLAIN,
+    SM3T__MODE_TRANSPARENT,
     SM3t__MODE_COUNT
 } sm3t_server_mode_t;
 
@@ -81,11 +79,8 @@ typedef struct {
         } listen;
 
         struct {
-            bool transparent;
-            struct {
-                sm3t_orig_dst_policy_t policy;
-            } orig_dst;
-        } interception;
+            sm3t_orig_dst_policy_t policy;
+        } orig_dst;
 
         struct {
             struct {
