@@ -1,5 +1,3 @@
-#include "core.h"
-#include "proxy.h"
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -18,7 +16,9 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "core.h"
 #include "logger.h"
+#include "proxy.h"
 
 sm3t_context_t *sm3t__new_ctx() {
     sm3t_context_t *ctx = malloc(sizeof(sm3t_context_t) + SM3T_BUFFER_SIZE);
@@ -54,20 +54,20 @@ void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_stor
 }
 
 int sm3t__connect_upstream(struct sockaddr_storage *server_addr, char *ip, int port) {
-    int server_sock = SM3T__ERR;
-    if ((server_sock = socket(server_addr->ss_family, SOCK_STREAM, 0)) == SM3T__ERR) {
+    int sock = SM3T__ERR;
+    if ((sock = socket(server_addr->ss_family, SOCK_STREAM, 0)) == SM3T__ERR) {
         log_error("Failed to create sever socket: %s", strerror(errno));
         return SM3T__ERR;
     }
 
-    if (connect(server_sock, (struct sockaddr *) server_addr, sizeof(*server_addr)) == SM3T__ERR) {
+    if (connect(sock, (struct sockaddr *) server_addr, sizeof(*server_addr)) == SM3T__ERR) {
         log_error("Failed to connect to sever: %s:%04u", ip, port);
         log_error("%s", strerror(errno));
         return SM3T__ERR;
     }
 
     log_info("Upstream: %s:%04d established", ip, port);
-    return server_sock;
+    return sock;
 }
 
 // Transparent TCP context handler

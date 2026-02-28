@@ -32,15 +32,21 @@
 #include "logger.h"
 #include "proxy.h"
 
+static void sm3t__close_server(sm3t_server_t *server) {
+    if (server == NULL) return;
+    close(server->sock);
+    free(server);
+}
+
 static sm3t_server_t *sm3t__init_server(sm3t_conf_t *conf) {
     struct addrinfo *host = NULL;
     struct addrinfo hint = {};
     sm3t_server_t *server = NULL;
+    int sock = SM3T__ERR;
+    int status = SM3T__ERR;
 
     char port[8] = {};
     sprintf(port, "%u", conf->tcp.listen.port);
-    int sock;
-    int status;
 
     hint.ai_family = AF_INET;
     hint.ai_socktype = SOCK_STREAM;
@@ -51,8 +57,8 @@ static sm3t_server_t *sm3t__init_server(sm3t_conf_t *conf) {
         return NULL;
     }
 
-    struct addrinfo *tmp = host;
     bool done = false;
+    struct addrinfo *tmp = host;
     while (tmp != NULL && !done) {
         if ((sock = socket(tmp->ai_family, tmp->ai_socktype, tmp->ai_protocol)) == SM3T__ERR) {
             log_error("Failed to create a valid socke: %s", strerror(errno));
@@ -90,6 +96,7 @@ static sm3t_server_t *sm3t__init_server(sm3t_conf_t *conf) {
 
             inet_ntop(tmp->ai_family, addr, server->meta.addr, tmp->ai_addrlen);
             done = true;
+            break;
         }
     RETRY:
         tmp = host->ai_next;
@@ -97,28 +104,22 @@ static sm3t_server_t *sm3t__init_server(sm3t_conf_t *conf) {
 
     freeaddrinfo(host);
     if (!done) {
-        if (server != NULL) free(server);
+        sm3t__close_server(server);
         return NULL;
     }
 
-    if (!sm3t__set_nonblocking(sock)) {
-        if (server != NULL) free(server);
+    if (!sm3t__set_nonblocking(server->sock)) {
+        sm3t__close_server(server);
         return NULL;
     }
 
-    if (listen(sock, SM3T_BACKLOG) == SM3T__ERR) {
+    if (listen(server->sock, SM3T_BACKLOG) == SM3T__ERR) {
         log_error("Failed to listen: %s", strerror(errno));
         if (server != NULL) free(server);
         return NULL;
     }
 
     return server;
-}
-
-static void sm3t__close_server(sm3t_server_t *server) {
-    if (server == NULL) return;
-    close(server->sock);
-    free(server);
 }
 
 void sm3t__run_server(sm3t_conf_t *conf) {
