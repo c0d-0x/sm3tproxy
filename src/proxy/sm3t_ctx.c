@@ -46,12 +46,11 @@ void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_stor
     }
 
     void *addr = (addr_storage->ss_family == AF_INET6) ? (void *) &addr6_nt->sin6_addr : (void *) &addr_nt->sin_addr;
-    uint32_t port = (addr_storage->ss_family == AF_INET6) ? addr6_nt->sin6_port : addr_nt->sin_port;
+    uint16_t port = (addr_storage->ss_family == AF_INET6) ? addr6_nt->sin6_port : addr_nt->sin_port;
     size_t addr_len = (addr_storage->ss_family == AF_INET6) ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in);
 
     ctx->meta.port = ntohs(port);
     inet_ntop(addr_storage->ss_family, addr, ctx->meta.addr, addr_len);
-    ctx->meta.port = ntohs(port);
 }
 
 int sm3t__connect_upstream(struct sockaddr_storage *server_addr, char *ip, int port) {

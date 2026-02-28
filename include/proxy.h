@@ -29,6 +29,11 @@ typedef struct {
     char addr[INET6_ADDRSTRLEN];
 } sm3t_metadata_t;
 
+typedef struct {
+    int sock;
+    sm3t_metadata_t meta;
+} sm3t_server_t;
+
 typedef struct sm3t_context_t {
     int fd;
     uint32_t events;
