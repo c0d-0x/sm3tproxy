@@ -40,8 +40,8 @@ static void sm3t__close_server(sm3t_server_t *server) {
 
 static sm3t_server_t *sm3t__init_server(sm3t_conf_t *conf) {
     struct addrinfo *host = NULL;
-    struct addrinfo hint = {};
     sm3t_server_t *server = NULL;
+    struct addrinfo hint = {};
     int sock = SM3T__ERR;
     int status = SM3T__ERR;
 
@@ -66,14 +66,14 @@ static sm3t_server_t *sm3t__init_server(sm3t_conf_t *conf) {
         }
 
         if (conf->mode == SM3T__MODE_TRANSPARENT) {
-            if (setsockopt(sock, SOL_IP, IP_TRANSPARENT, &(int) {1}, sizeof(int)) == SM3T__ERR) {
+            if (setsockopt(sock, SOL_IP, IP_TRANSPARENT, &(int){1}, sizeof(int)) == SM3T__ERR) {
                 log_error("Failed to make socket transparent: %s", strerror(errno));
                 close(sock);
                 goto RETRY;
             }
         }
 
-        if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &(int) {1}, sizeof(int)) == SM3T__ERR) {
+        if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) == SM3T__ERR) {
             log_error("Failed server addr reusabl: %s", strerror(errno));
             close(sock);
             goto RETRY;
@@ -88,8 +88,12 @@ static sm3t_server_t *sm3t__init_server(sm3t_conf_t *conf) {
             uint16_t port = (tmp->ai_family == AF_INET6) ? ((struct sockaddr_in6 *) (tmp->ai_addr))->sin6_port
                                                          : ((struct sockaddr_in *) (tmp->ai_addr))->sin_port;
 
-            if ((server = malloc(sizeof(sm3t_server_t))) == NULL) SM3T__OUT_OF_MEMORY();
-            *server = (sm3t_server_t) {
+            if ((server = malloc(sizeof(sm3t_server_t))) == NULL) {
+                close(sock);
+                SM3T__OUT_OF_MEMORY();
+            }
+
+            *server = (sm3t_server_t){
                 .sock = sock,
                 .meta.port = ntohs(port),
             };
@@ -115,11 +119,29 @@ static sm3t_server_t *sm3t__init_server(sm3t_conf_t *conf) {
 
     if (listen(server->sock, SM3T_BACKLOG) == SM3T__ERR) {
         log_error("Failed to listen: %s", strerror(errno));
-        if (server != NULL) free(server);
+        sm3t__close_server(server);
         return NULL;
     }
 
     return server;
+}
+
+int sm3t__connect_upstream(struct sockaddr_storage *server_addr, char *ip, int port) {
+    int sock = SM3T__ERR;
+    if ((sock = socket(server_addr->ss_family, SOCK_STREAM, 0)) == SM3T__ERR) {
+        log_error("Failed to create sever socket: %s", strerror(errno));
+        return SM3T__ERR;
+    }
+
+    if (connect(sock, (struct sockaddr *) server_addr, sizeof(*server_addr)) == SM3T__ERR) {
+        log_error("Failed to connect to sever: %s:%04u", ip, port);
+        log_error("%s", strerror(errno));
+        close(sock);
+        return SM3T__ERR;
+    }
+
+    log_info("Upstream: %s:%04d established", ip, port);
+    return sock;
 }
 
 void sm3t__run_server(sm3t_conf_t *conf) {
@@ -171,11 +193,14 @@ void sm3t__run_server(sm3t_conf_t *conf) {
 
                 if ((getpeername(client_sock, (struct sockaddr *) &client_addr, &client_addr_len)) == SM3T__ERR) {
                     log_error("Failed to get client addr");
+                    free(client_ctx);
+                    free(upstream_ctx);
+                    close(client_sock);
                     continue;
                 }
 
                 sm3t__set_nonblocking(client_sock);
-                sm3t__set_peer_meta(client_ctx, &client_addr, conf->global.logging.log_address);
+                sm3t__set_peer_meta(client_ctx, &client_addr, conf->global.logging.log_addr);
 
                 struct sockaddr_storage upstream_addr = {};
                 socklen_t upstream_addr_len = sizeof(upstream_addr);
@@ -183,13 +208,19 @@ void sm3t__run_server(sm3t_conf_t *conf) {
                                &upstream_addr_len)
                     == SM3T__ERR) {
                     log_error("Failed to get upstream's original dest");
+                    free(client_ctx);
+                    free(upstream_ctx);
+                    close(client_sock);
                     continue;
                 }
 
-                sm3t__set_peer_meta(upstream_ctx, &upstream_addr, conf->global.logging.log_address);
+                sm3t__set_peer_meta(upstream_ctx, &upstream_addr, conf->global.logging.log_addr);
                 int upstream_sock
                     = sm3t__connect_upstream(&upstream_addr, upstream_ctx->meta.addr, upstream_ctx->meta.port);
                 if (upstream_sock == SM3T__ERR) {
+                    free(client_ctx);
+                    free(upstream_ctx);
+                    close(client_sock);
                     continue;
                 }
 
@@ -223,5 +254,6 @@ void sm3t__run_server(sm3t_conf_t *conf) {
 
     close(epoll_fd);
     sm3t__close_server(server);
+    sm3t__cleanup_vec(dead_ctxs, sm3t__cleanup_ctx);
     sm3t__destroy_vec(dead_ctxs);
 }

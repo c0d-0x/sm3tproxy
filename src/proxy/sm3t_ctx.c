@@ -20,6 +20,8 @@
 #include "logger.h"
 #include "proxy.h"
 
+// TODO: Config integration
+
 sm3t_context_t *sm3t__new_ctx() {
     sm3t_context_t *ctx = malloc(sizeof(sm3t_context_t) + SM3T_BUFFER_SIZE);
     if (ctx == NULL) SM3T__OUT_OF_MEMORY();
@@ -28,7 +30,8 @@ sm3t_context_t *sm3t__new_ctx() {
 
 void sm3t__cleanup_ctx(void *context) {
     sm3t_context_t *ctx = (sm3t_context_t *) context;
-    log_info("Cleaning up ctx: %s:%04u", ctx->meta.addr, ctx->meta.port);
+    log_info("Ctx dropped: %s:%04u", ctx->meta.addr, ctx->meta.port);
+    if (ctx->fd > 0) close(ctx->fd);
     free(ctx);
 }
 
@@ -53,58 +56,31 @@ void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_stor
     inet_ntop(addr_storage->ss_family, addr, ctx->meta.addr, addr_len);
 }
 
-int sm3t__connect_upstream(struct sockaddr_storage *server_addr, char *ip, int port) {
-    int sock = SM3T__ERR;
-    if ((sock = socket(server_addr->ss_family, SOCK_STREAM, 0)) == SM3T__ERR) {
-        log_error("Failed to create sever socket: %s", strerror(errno));
-        return SM3T__ERR;
-    }
-
-    if (connect(sock, (struct sockaddr *) server_addr, sizeof(*server_addr)) == SM3T__ERR) {
-        log_error("Failed to connect to sever: %s:%04u", ip, port);
-        log_error("%s", strerror(errno));
-        return SM3T__ERR;
-    }
-
-    log_info("Upstream: %s:%04d established", ip, port);
-    return sock;
-}
-
 // Transparent TCP context handler
 bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
+    // TODO: Needs refactoring or a rewrite. Reallllly bulky :/
+    // NOTE: works for now, though :)
+
     if (context == NULL) return true;
     sm3t_context_t *ctx = (sm3t_context_t *) context;
     ssize_t n_recv = 0;
     ssize_t n_sent = 0;
 
     if (ctx->peer == NULL) {
-        ctx->write_eof = true;
-        ctx->read_eof = true;
-        shutdown(ctx->fd, SHUT_RDWR);
-        return false;
+        if (!ctx->wpartial) {
+            ctx->write_eof = true;
+            ctx->read_eof = true;
+            shutdown(ctx->fd, SHUT_RDWR);
+            return false;
+        }
     }
 
     char *address = ctx->meta.addr;
     uint32_t port = ctx->meta.port;
     int fd_in = ctx->fd;
     sm3t_context_t *peer = ctx->peer;
-    int fd_out = peer->fd;
+    int fd_out = (peer != NULL) ? peer->fd : SM3T__ERR;
     uint8_t *buff = ctx->buffer;
-
-    if (ctx->events & EPOLLRDHUP) {
-        ctx->read_eof = true;
-
-        if (peer != NULL) {
-            peer->write_eof = true;
-            shutdown(peer->fd, SHUT_WR);
-
-            peer->peer = NULL;
-        }
-
-        ctx->peer = NULL;
-        log_info("Ctx hupped: %s:%04u", address, port);
-        return false;
-    }
 
     if ((ctx->events & EPOLLOUT) && ctx->wpartial) {
         if ((n_sent = send(ctx->fd, ctx->buffer + ctx->wstart, ctx->wlen, 0)) == SM3T__ERR) {
@@ -117,13 +93,10 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
         }
 
         if (n_sent == 0) {
-            shutdown(ctx->fd, SHUT_WR);
             ctx->write_eof = true;
-
             if (peer != NULL) peer->peer = NULL;
             ctx->peer = NULL;
-
-            log_info("Peer closed write %s:%04u", address, port);
+            log_warn("Zero-byte send on queued flush %s:%04u", address, port);
             return false;
         }
 
@@ -137,8 +110,12 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
             struct epoll_event ev_self = {.events = EPOLLIN | EPOLLRDHUP, .data.ptr = ctx};
             sm3t_modify_poll(&epoll_fd, ctx->fd, &ev_self);
 
-            struct epoll_event ev_peer = {.events = EPOLLIN | EPOLLRDHUP, .data.ptr = peer};
-            sm3t_modify_poll(&epoll_fd, peer->fd, &ev_peer);
+            if (peer != NULL) {
+                struct epoll_event ev_peer = {.events = EPOLLIN | EPOLLRDHUP, .data.ptr = peer};
+                sm3t_modify_poll(&epoll_fd, peer->fd, &ev_peer);
+            } else {
+                return false;
+            }
 
             log_info("Finished sending queued data to %s:%04u", address, port);
         }
@@ -146,90 +123,102 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
         return true;
     }
 
-    if (!(ctx->events & EPOLLIN) || peer->wpartial) return true;
-    if ((n_recv = recv(fd_in, buff, SM3T_BUFFER_SIZE - 1, 0)) == SM3T__ERR) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;
+    if (peer == NULL) return false;
 
-        log_error("Failed to recv data from %s:%04u: %s", address, port, strerror(errno));
-        return false;
-    }
+    if ((ctx->events & EPOLLIN) && !peer->wpartial) {
+        if ((n_recv = recv(fd_in, buff, SM3T_BUFFER_SIZE - 1, 0)) == SM3T__ERR) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) goto CHECK_HUP;
 
-    if (n_recv == 0) {
-        ctx->read_eof = true;
-
-        if (peer != NULL) {
-            shutdown(peer->fd, SHUT_WR);
-            peer->write_eof = true;
-
-            peer->peer = NULL;
+            log_error("Failed to recv data from %s:%04u: %s", address, port, strerror(errno));
+            if (peer != NULL) peer->peer = NULL;
+            ctx->peer = NULL;
+            return false;
         }
 
-        ctx->peer = NULL;
-        log_info("Peer closed read: %s:%04u", address, port);
-        return false;
-    }
+        if (n_recv == 0) {
+            ctx->read_eof = true;
 
-    if ((n_sent = send(fd_out, buff, n_recv, 0)) == SM3T__ERR) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-            memcpy(peer->buffer, buff, n_recv);
+            if (peer != NULL) {
+                peer->write_eof = true;
+                if (!peer->wpartial) shutdown(peer->fd, SHUT_WR);
+                peer->peer = NULL;
+            }
+
+            ctx->peer = NULL;
+            log_warn("Zero-bytes read: %s:%04u Peer closed", address, port);
+            return false;
+        }
+
+        if ((n_sent = send(fd_out, buff, n_recv, 0)) == SM3T__ERR) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+                memcpy(peer->buffer, buff, n_recv);
+                peer->wpartial = true;
+                peer->wstart = 0;
+                peer->wlen = (int) n_recv;
+
+                struct epoll_event ev_self = {.events = EPOLLRDHUP, .data.ptr = ctx};
+                sm3t_modify_poll(&epoll_fd, ctx->fd, &ev_self);
+
+                struct epoll_event ev_peer = {.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP, .data.ptr = peer};
+                sm3t_modify_poll(&epoll_fd, peer->fd, &ev_peer);
+
+                log_warn("Would block, queued %zd bytes for %s:%04u", n_recv, peer->meta.addr, peer->meta.port);
+                return true;
+            }
+
+            log_error("Failed to send data to %s:%04u: %s", address, port, strerror(errno));
+            if (peer != NULL) peer->peer = NULL;
+            ctx->peer = NULL;
+            return false;
+        }
+
+        if (n_sent == 0) {
+            if (peer != NULL) {
+                peer->write_eof = true;
+                shutdown(peer->fd, SHUT_WR);
+                peer->peer = NULL;
+            }
+
+            ctx->peer = NULL;
+            log_warn("Zero-byte send to %s:%04u Peer closed", address, port);
+            return false;
+        }
+
+        if (n_sent < n_recv) {
+            int remaining = (int) (n_recv - n_sent);
+            memcpy(peer->buffer, buff + n_sent, remaining);  // TODO: Non-copy alternatives
+
             peer->wpartial = true;
             peer->wstart = 0;
-            peer->wlen = (int) n_recv;
+            peer->wlen = remaining;
 
-            // NOTE: Stop reading from this socket until peer's buffer is clear (For now)
             struct epoll_event ev_self = {.events = EPOLLRDHUP, .data.ptr = ctx};
             sm3t_modify_poll(&epoll_fd, ctx->fd, &ev_self);
 
-            // NOTE: Enable EPOLLOUT on peer
             struct epoll_event ev_peer = {.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP, .data.ptr = peer};
             sm3t_modify_poll(&epoll_fd, peer->fd, &ev_peer);
 
-            log_warn("Would block, queued %zd bytes for %s:%04u", n_recv, peer->meta.addr, peer->meta.port);
+            log_warn("Partial send, queued %d bytes for %s:%04u", remaining, peer->meta.addr, peer->meta.port);
             return true;
         }
 
-        log_error("Failed to send data to %s:%04u: %s", address, port, strerror(errno));
-        if (peer != NULL) peer->peer = NULL;
-
-        ctx->peer = NULL;
         return true;
     }
 
-    if (n_sent == 0) {
+CHECK_HUP:
+    if (ctx->events & EPOLLRDHUP) {
+        ctx->read_eof = true;
+
         if (peer != NULL) {
-            shutdown(peer->fd, SHUT_WR);
             peer->write_eof = true;
+            if (!peer->wpartial) shutdown(peer->fd, SHUT_WR);
             peer->peer = NULL;
         }
 
         ctx->peer = NULL;
-        log_info("Peer closed write %s:%04u", address, port);
+        log_info("Ctx hupped: %s:%04u", address, port);
         return false;
     }
-
-    if (n_sent < n_recv) {
-        int remaining = (int) (n_recv - n_sent);
-        memcpy(peer->buffer, buff + n_sent, remaining);
-
-        peer->wpartial = true;
-        peer->wstart = 0;
-        peer->wlen = remaining;
-
-        // NOTE: Stop reading from this socket until peer's buffer is clear (For now)
-        struct epoll_event ev_self = {.events = EPOLLRDHUP, .data.ptr = ctx};
-        sm3t_modify_poll(&epoll_fd, ctx->fd, &ev_self);
-
-        // NOTE: Enable EPOLLOUT on peer
-        struct epoll_event ev_peer = {.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP, .data.ptr = peer};
-        sm3t_modify_poll(&epoll_fd, peer->fd, &ev_peer);
-
-        log_warn("Partial send, queued %d bytes for %s:%04u", remaining, peer->meta.addr, peer->meta.port);
-        return true;
-    }
-
-    ctx->wpartial = false;
-    ctx->wlen = 0;
-    ctx->wstart = 0;
 
     return true;
 }

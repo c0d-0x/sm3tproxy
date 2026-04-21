@@ -62,7 +62,7 @@ enum LOG_LEVEL : uint8_t {
 };
 
 typedef struct record record_t;
-typedef struct handler handler_t;
+typedef struct handler log_handler_t;
 typedef struct logger logger_t;
 
 typedef void (*log_dump_fn)(record_t *rec);
@@ -135,6 +135,7 @@ void color_fmt2(record_t *rec, const char *time_buf);
 void no_color_fmt1(record_t *rec, const char *time_buf);
 void no_color_fmt2(record_t *rec, const char *time_buf);
 
+// #define LOGGER_IMPL
 #ifdef LOGGER_IMPL
 
 #include <assert.h>
@@ -143,7 +144,7 @@ void no_color_fmt2(record_t *rec, const char *time_buf);
 
 struct logger {
     log_LockFn lock;
-    handler_t handlers[MAX_HANDLERS];
+    log_handler_t handlers[MAX_HANDLERS];
     size_t count;
 };
 
@@ -174,7 +175,7 @@ void log_set_lock(log_LockFn fn, void *fp) {
 }
 
 __attribute__((constructor)) static void init_logger(void) {
-    L.handlers[ROOT_HANDLER] = (handler_t) {
+    L.handlers[ROOT_HANDLER] = (log_handler_t) {
         .name = ROOT_HANDLER_NAME,
         .dump_fn = dump_log,
         .fmt_fn = color_fmt1,
@@ -193,7 +194,7 @@ static int log_add_handler(const char *name, log_dump_fn dump_fn, log_fmt_fn fmt
         return -1;
     }
 
-    L.handlers[L.count++] = (handler_t) {
+    L.handlers[L.count++] = (log_handler_t) {
         .name = name,
         .dump_fn = dump_fn,
         .fmt_fn = fmt_fn,
@@ -227,7 +228,7 @@ int log_add_stream_handler(FILE *fp, uint8_t level, const char *name) {
     return log_add_handler(name, dump_log, color_fmt1, fp, level, false, DEFAULT_DATE_FORMAT1);
 }
 
-static void update_record(record_t *rec, handler_t *hd) {
+static void update_record(record_t *rec, log_handler_t *hd) {
     if (!rec->time) {
         time_t t = time(NULL);
         rec->time = localtime(&t);
@@ -247,7 +248,7 @@ void _log_message(uint8_t level, const char *file, int line, const char *msg_fmt
         .msg_fmt = msg_fmt,
     };
 
-    handler_t *rh = &L.handlers[ROOT_HANDLER];
+    log_handler_t *rh = &L.handlers[ROOT_HANDLER];
     if (!rh->quiet && level >= rh->level) {
         update_record(&rec, rh);
         va_start(rec.ap, msg_fmt);
@@ -256,7 +257,7 @@ void _log_message(uint8_t level, const char *file, int line, const char *msg_fmt
     }
 
     for (size_t i = ROOT_HANDLER + 1; i < L.count && L.handlers[i].dump_fn; i++) {
-        handler_t *hd = &L.handlers[i];
+        log_handler_t *hd = &L.handlers[i];
         if (!hd->quiet && level >= hd->level) {
             update_record(&rec, hd);
             va_start(rec.ap, msg_fmt);

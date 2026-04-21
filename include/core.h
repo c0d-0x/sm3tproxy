@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 #define SM3T_VERSION "v1.0.0"
-#define SM3T_VEC_MAX 16
+#define SM3T_VEC_MAX 1
 
 #define SM3T__FATAL(...)              \
     do {                              \

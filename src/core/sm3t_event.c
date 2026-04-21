@@ -7,8 +7,8 @@
 #include "logger.h"
 
 bool sm3t__set_nonblocking(int fd) {
-    int flags = 0;
-    if ((flags = fcntl(fd, F_GETFL, 0)) == SM3T__ERR) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == SM3T__ERR) {
         log_error("Failed to get fd flags: %s", strerror(errno));
         return false;
     }
@@ -17,7 +17,6 @@ bool sm3t__set_nonblocking(int fd) {
         log_error("Failed to set fd to non-blocking: %s", strerror(errno));
         return false;
     }
-
     return true;
 }
 
@@ -31,8 +30,7 @@ bool sm3t__append_poll(int *epoll_fd, int fd, struct epoll_event *ev) {
 
 bool sm3t__remove_poll(int *epoll_fd, int fd) {
     if (epoll_ctl(*epoll_fd, EPOLL_CTL_DEL, fd, NULL) == SM3T__ERR) {
-        log_error("Failed to remove fd to epoll list");
-        log_error("Epoll: %s ", strerror(errno));
+        log_error("Failed to remove fd to epoll list: %s", strerror(errno));
         return false;
     }
     return true;

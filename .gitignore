@@ -51,6 +51,8 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+# logs
+*log
 # debug information files
 *.dwo
 

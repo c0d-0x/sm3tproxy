@@ -1,8 +1,15 @@
 CC             = gcc
 
-CFLAGS         ?= -Wall -g -std=c23 -Wextra -Wformat-security -Wformat-overflow=2 -fsanitize=address -fno-omit-frame-pointer
+CFLAGS         := -Wall -g -std=c23 -Wextra -Wformat-security -Wformat-overflow=2 
+# CFLAGS		   += -O3 -s # strip bin
+# Debugging params 
+CFLAGS		   += -ggdb
+CFLAGS 		   += -fsanitize=address
+CFLAGS 		   += -fno-omit-frame-pointer
+CFLAGS		   += -fsanitize-recover=address
 
-INCLUDE        ?= -Iinclude -Ilib
+
+INCLUDE        := -Iinclude -Ilib
 
 LDLIBS         =  -lm -ldl -lpthread
 
@@ -38,6 +45,9 @@ setup-nat:
 
 clean-nat: 
 	-$(NAT) $(CLEANUP)
+
+run-no-debug:
+	-@$(SET_GROUP) $(SM3T_GROUP) "$(BIN)"
 
 run:
 	-@$(SET_GROUP) $(SM3T_GROUP) "$(BIN) --debug"

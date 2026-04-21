@@ -28,6 +28,7 @@ void sm3t__cleanup_vec(sm3t_vec_t *vec, void (*cleanup_callback)(void *data)) {
     if (vec == NULL) return;
     for (size_t i = 0; i < vec->size; i++) {
         cleanup_callback(vec->data[i]);
+        vec->data[i] = NULL;
     }
 
     vec->size = 0;
@@ -35,7 +36,6 @@ void sm3t__cleanup_vec(sm3t_vec_t *vec, void (*cleanup_callback)(void *data)) {
 
 void *sm3t__vec_pop(sm3t_vec_t *vec) {
     if (vec == NULL) return NULL;
-
     return vec->data[vec->size--];
 }
 

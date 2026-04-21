@@ -20,13 +20,17 @@ int main(int argc, char *argv[]) {
     char **positional_args;
     parse_args(&cmd_arg, argc, argv, &positional_args);
 
-    if (!(*port <= ((1 << 16) - 1))) SM3T__FATAL("Invalid port number");
+    if (!(*port <= ((1 << 16) - 1))) {
+        free_args(&cmd_arg);
+        SM3T__FATAL("Invalid port number");
+    }
 
-    sm3t_conf_t *conf = &(sm3t_conf_t) {.mode = SM3T__MODE_TRANSPARENT,
-                                        .tcp.listen.port = (uint16_t) *port,
-                                        .ctx_vtable[SM3T__MODE_TRANSPARENT] = sm3t__ttcp_ctx_handler,
-                                        .global.logging.log_address = *debug};
+    sm3t_conf_t *conf = &(sm3t_conf_t){.mode = SM3T__MODE_TRANSPARENT,
+                                       .tcp.listen.port = (uint16_t) *port,
+                                       .ctx_vtable[SM3T__MODE_TRANSPARENT] = sm3t__ttcp_ctx_handler,
+                                       .global.logging.log_addr = *debug};
     sm3t__run_server(conf);
+    free_args(&cmd_arg);
     return EXIT_SUCCESS;
 }
 

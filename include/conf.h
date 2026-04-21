@@ -67,7 +67,7 @@ typedef struct {
             sm3t_log_level_t level;
             sm3t_log_format_t format;
             sm3t_log_output_t output;
-            bool log_address;
+            bool log_addr;
             char *file_path;
         } logging;
     } global;
