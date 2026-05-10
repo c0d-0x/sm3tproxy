@@ -14,8 +14,9 @@ INCLUDE        := -Iinclude -Ilib
 LDLIBS         =  -lm -ldl -lpthread
 
 SRC            := $(wildcard src/*.c)
-PROXY_SRC        := $(wildcard src/proxy/*.c)
-CORE_SRC        := $(wildcard src/core/*.c)
+PROXY_SRC      := $(wildcard src/proxy/*.c)
+CORE_SRC       := $(wildcard src/core/*.c)
+CONF_SRC       := $(wildcard src/conf/*.c)
 ALL_SRC        := $(SRC) $(PROXY_SRC) $(CORE_SRC)
 
 OBJ            := $(ALL_SRC:src/%.c=build/%.o)

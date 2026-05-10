@@ -17,8 +17,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "conf.h"
-
 #define SM3T_DEFAULT_PORT 8080
 #define SM3T_BACKLOG 10
 #define SM3T_BUFFER_SIZE 1024
@@ -52,11 +50,14 @@ typedef struct sm3t_context_t {
 } sm3t_context_t;
 
 bool sm3t__set_nonblocking(int fd);
-void sm3t__run_server(sm3t_conf_t *conf);
-bool sm3t__ttcp_ctx_handler(void *ctx, int epoll_fd);
+void sm3t__run_server(void *conf);
 int sm3t__connect_upstream(struct sockaddr_storage *server_addr, char *ip, int port);
 void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage, bool debug);
 
 sm3t_context_t *sm3t__new_ctx(void);
 void sm3t__cleanup_ctx(void *ctx);
+bool sm3t__ttcp_ctx_handler(void *ctx, void *conf, int epoll_fd);
+bool sm3t__revp_tcp_ctx_handler(void *ctx, void *conf, int epoll_fd);
+bool sm3t__socks5__ctx_handler(void *ctx, void *conf, int epoll_fd);
+
 #endif  // !SM3T_PROXY_H

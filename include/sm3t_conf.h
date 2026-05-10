@@ -4,12 +4,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef bool (*sm3t_ctx_handler_t)(void *, int);
+typedef bool (*sm3t_ctx_handler_t)(void *, void *, int);
 
 typedef enum : uint8_t {
-    SM3T__MODE_PLAIN,
     SM3T__MODE_TRANSPARENT,
-    SM3t__MODE_COUNT
+    SM3t__MODE_REVERSE,
+    SM3T__MODE_SOCKS5,
+    SM3t__MODE_COUNT  // counter
 } sm3t_server_mode_t;
 
 typedef enum : uint8_t {
@@ -22,22 +23,22 @@ typedef enum : uint8_t {
 typedef enum : uint8_t {
     SM3T__LOG_STRUCTURED,
     SM3T__LOG_PLAIN
-} sm3t_log_format_t;
+} sm3t_log_fmt_t;
 
 typedef enum : uint8_t {
     SM3T__LOG_STDOUT,
     SM3T__LOG_FILE,
     SM3T__LOG_SYSLOG
-} sm3t_log_output_t;
+} sm3t_log_out_t;
 
 typedef enum : uint8_t {
-    SM3T__ORIG_dst_REQUIRED,
-    SM3T__ORIG_dst_OPTIONAL,
-    SM3T__ORIG_dst_IGNORED
+    SM3T__ORIG_DST_REQUIRED,
+    SM3T__ORIG_DST_OPTIONAL,
+    SM3T__ORIG_DST_IGNORED
 } sm3t_orig_dst_policy_t;
 
 typedef enum : uint8_t {
-    SM3T__FORWARD_ORIG_dst,
+    SM3T__FORWARD_ORIG,
     SM3T__FORWARD_FIXED
 } sm3t_forwarding_mode_t;
 
@@ -58,19 +59,17 @@ typedef struct {
     sm3t_ctx_handler_t ctx_vtable[SM3t__MODE_COUNT];
     struct {
         char *name;
-        char *version;
         char *user;
         char *group;
         char *chroot;
         bool daemonize;
         struct {
             sm3t_log_level_t level;
-            sm3t_log_format_t format;
-            sm3t_log_output_t output;
-            bool log_addr;
+            sm3t_log_fmt_t format;
+            sm3t_log_out_t out;
             char *file_path;
         } logging;
-    } global;
+    } sys;
 
     struct {
         struct {
@@ -105,6 +104,7 @@ typedef struct {
                 uint16_t *ports;
                 size_t ports_count;
             } src;
+
             struct {
                 char **cidrs;
                 size_t cidrs_count;
@@ -139,7 +139,7 @@ typedef struct {
             } timeout;
 
             struct {
-                bool enabled;
+                bool enable;
                 uint8_t max;
                 uint32_t backoff_ms;
             } retries;
@@ -157,7 +157,7 @@ typedef struct {
 
         struct {
             struct {
-                bool enabled;
+                bool enable;
                 uint32_t idle_ms;
                 uint32_t interval_ms;
                 uint8_t count;
@@ -167,14 +167,13 @@ typedef struct {
         } transport;
 
         struct {
+            bool enable;
             struct {
-                bool enabled;
                 bool per_src;
                 bool per_dst;
             } metrics;
 
             struct {
-                bool enabled;
                 bool src_ip;
                 bool src_port;
                 bool dst_ip;
@@ -183,11 +182,9 @@ typedef struct {
                 bool bytes_out;
                 bool duration;
                 bool err;
-            } logging;
+            } log;
         } telemetry;
     } tcp;
-
-    void *lua_hook;  // NOTE: I'm not really sure about this yet.
 } sm3t_conf_t;
 
 sm3t_conf_t *sm3t__parse_conf(char *path);

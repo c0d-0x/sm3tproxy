@@ -2,7 +2,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "core.h"
+
+#include "sm3t_core.h"
 
 sm3t_view_t sm3t__view(const void *data, size_t len) {
     sm3t_view_t view = (sm3t_view_t){.data = (void *) data, .len = len};

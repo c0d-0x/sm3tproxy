@@ -3,8 +3,8 @@
 #include <sys/epoll.h>
 #include <sys/fcntl.h>
 
-#include "core.h"
 #include "logger.h"
+#include "sm3t_core.h"
 
 bool sm3t__set_nonblocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);

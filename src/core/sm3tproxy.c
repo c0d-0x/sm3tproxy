@@ -2,9 +2,9 @@
 #include <stdio.h>
 
 #include "args.h"
-#include "conf.h"
-#include "core.h"
-#include "proxy.h"
+#include "sm3t_conf.h"
+#include "sm3t_core.h"
+#include "sm3t_proxy.h"
 
 void print_help(Args *a, const char *program);
 
@@ -17,6 +17,8 @@ int main(int argc, char *argv[]) {
     const long *port = option_long(&cmd_arg, "port", "Specify a local port to run proxy", .short_name = 'p',
                                    .default_value = SM3T_DEFAULT_PORT);
     const bool *debug = option_flag(&cmd_arg, "debug", "Show debug info", .short_name = 'd');
+    const size_t *mode = option_enum(&cmd_arg, "mode", "Specify proxy server mode",
+                                     ((const char *[]){"TTCP", "REV", "SOCKS5", NULL}), .short_name = 'm');
     char **positional_args;
     parse_args(&cmd_arg, argc, argv, &positional_args);
 
@@ -25,20 +27,27 @@ int main(int argc, char *argv[]) {
         SM3T__FATAL("Invalid port number");
     }
 
-    sm3t_conf_t *conf = &(sm3t_conf_t){.mode = SM3T__MODE_TRANSPARENT,
+    printf("MODE: %ld\n", *mode);
+    sm3t_conf_t *conf = &(sm3t_conf_t){.mode = *mode,
                                        .tcp.listen.port = (uint16_t) *port,
                                        .ctx_vtable[SM3T__MODE_TRANSPARENT] = sm3t__ttcp_ctx_handler,
-                                       .global.logging.log_addr = *debug};
+                                       .ctx_vtable[SM3t__MODE_REVERSE] = sm3t__revp_tcp_ctx_handler,
+                                       .ctx_vtable[SM3T__MODE_SOCKS5] = sm3t__socks5__ctx_handler,
+                                       .tcp.telemetry.enable = *debug};
     sm3t__run_server(conf);
     free_args(&cmd_arg);
     return EXIT_SUCCESS;
 }
 
 void print_help(Args *a, const char *program) {
-    fprintf(stderr, "%s - Is an experimental programmable proxy server\n", program);
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Usage:\n");
-    fprintf(stderr, "  %s [options]\n", program);
-    fprintf(stderr, "\n");
+    fprintf(stdout, "%s - Is an experimental programmable tcp proxy server\n", program);
+    fprintf(stdout, "\n");
+    fprintf(stdout, "Usage:\n");
+    fprintf(stdout, "  %s [options]\n", program);
+    fprintf(stdout, "\n");
     print_options(a, stdout);
+    fprintf(stdout, "   Mode:\n");
+    fprintf(stdout, "        TTCP - Transparent proxy mode\n");
+    fprintf(stdout, "        REV - Reverse proxy mode\n");
+    fprintf(stdout, "        SOCKS5 - SOCKS5 proxy mode\n");
 }

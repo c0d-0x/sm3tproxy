@@ -18,7 +18,6 @@
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <sched.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,10 +26,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "conf.h"
-#include "core.h"
 #include "logger.h"
-#include "proxy.h"
+#include "sm3t_conf.h"
+#include "sm3t_core.h"
+#include "sm3t_proxy.h"
 
 static void sm3t__close_server(sm3t_server_t *server) {
     if (server == NULL) return;
@@ -144,7 +143,8 @@ int sm3t__connect_upstream(struct sockaddr_storage *server_addr, char *ip, int p
     return sock;
 }
 
-void sm3t__run_server(sm3t_conf_t *conf) {
+void sm3t__run_server(void *config) {
+    sm3t_conf_t *conf = (sm3t_conf_t *) config;
     sm3t_server_t *server = sm3t__init_server(conf);
     if (server == NULL) return;
 
@@ -165,22 +165,21 @@ void sm3t__run_server(sm3t_conf_t *conf) {
     sm3t_vec_t *dead_ctxs = NULL;
     struct epoll_event ev_list[SM3T_MAX_EVENT] = {};
 
-    log_info("SM3TPROXY RUNNING ON PORT: %s::%04u", server->meta.addr, server->meta.port);
+    log_info("SM3TPROXY RUNNING ON: %s::%04u", server->meta.addr, server->meta.port);
     while (true) {
         int n_events = epoll_wait(epoll_fd, ev_list, SM3T_MAX_EVENT, -1);
         if (n_events == SM3T__ERR) {
-            sm3t__close_server(server);
-            sm3t__cleanup_vec(dead_ctxs, sm3t__cleanup_ctx);
-            sm3t__destroy_vec(dead_ctxs);
-            SM3T__FATAL("Failed to make reseption for events");
+            log_error("Failed to make reseption for events");
+            break;
         }
 
         for (int i = 0; i < n_events; i++) {
             if (ev_list[i].data.fd == server->sock) {
                 log_info("New incoming connection");
+                sm3t_context_t *client_ctx = sm3t__new_ctx();
 
-                int client_sock = accept(server->sock, NULL, NULL);
-                if (client_sock == SM3T__ERR) {
+                client_ctx->fd = accept(server->sock, NULL, NULL);
+                if (client_ctx->fd == SM3T__ERR) {
                     log_error("Failed accept connection: %s", strerror(errno));
                     continue;
                 }
@@ -188,61 +187,56 @@ void sm3t__run_server(sm3t_conf_t *conf) {
                 struct sockaddr_storage client_addr = {};
                 socklen_t client_addr_len = sizeof(client_addr);
 
-                sm3t_context_t *client_ctx = sm3t__new_ctx();
-                sm3t_context_t *upstream_ctx = sm3t__new_ctx();
-
-                if ((getpeername(client_sock, (struct sockaddr *) &client_addr, &client_addr_len)) == SM3T__ERR) {
+                if ((getpeername(client_ctx->fd, (struct sockaddr *) &client_addr, &client_addr_len)) == SM3T__ERR) {
                     log_error("Failed to get client addr");
-                    free(client_ctx);
-                    free(upstream_ctx);
-                    close(client_sock);
+                    sm3t__cleanup_ctx(client_ctx);
                     continue;
                 }
 
-                sm3t__set_nonblocking(client_sock);
-                sm3t__set_peer_meta(client_ctx, &client_addr, conf->global.logging.log_addr);
+                if (conf->mode == SM3T__MODE_TRANSPARENT) {
+                    sm3t_context_t *upstream_ctx = sm3t__new_ctx();
+                    struct sockaddr_storage upstream_addr = {};
+                    socklen_t upstream_addr_len = sizeof(upstream_addr);
+                    if (getsockopt(client_ctx->fd, SOL_IP, SO_ORIGINAL_DST, (struct sockaddr *) &upstream_addr,
+                                   &upstream_addr_len)
+                        == SM3T__ERR) {
+                        log_error("Failed to get upstream's original dest");
+                        sm3t__cleanup_ctx(client_ctx);
+                        sm3t__cleanup_ctx(upstream_ctx);
 
-                struct sockaddr_storage upstream_addr = {};
-                socklen_t upstream_addr_len = sizeof(upstream_addr);
-                if (getsockopt(client_sock, SOL_IP, SO_ORIGINAL_DST, (struct sockaddr *) &upstream_addr,
-                               &upstream_addr_len)
-                    == SM3T__ERR) {
-                    log_error("Failed to get upstream's original dest");
-                    free(client_ctx);
-                    free(upstream_ctx);
-                    close(client_sock);
-                    continue;
+                        continue;
+                    }
+
+                    sm3t__set_peer_meta(upstream_ctx, &upstream_addr, conf->tcp.telemetry.enable);
+                    int upstream_sock
+                        = sm3t__connect_upstream(&upstream_addr, upstream_ctx->meta.addr, upstream_ctx->meta.port);
+                    if (upstream_sock == SM3T__ERR) {
+                        sm3t__cleanup_ctx(client_ctx);
+                        sm3t__cleanup_ctx(upstream_ctx);
+                        continue;
+                    }
+
+                    sm3t__set_nonblocking(upstream_sock);
+                    ev.events = EPOLLIN | EPOLLRDHUP;
+
+                    client_ctx->peer = upstream_ctx;
+                    upstream_ctx->peer = client_ctx;
+
+                    upstream_ctx->fd = upstream_sock;
+                    ev.data.ptr = upstream_ctx;
+                    sm3t__append_poll(&epoll_fd, upstream_ctx->fd, &ev);
                 }
 
-                sm3t__set_peer_meta(upstream_ctx, &upstream_addr, conf->global.logging.log_addr);
-                int upstream_sock
-                    = sm3t__connect_upstream(&upstream_addr, upstream_ctx->meta.addr, upstream_ctx->meta.port);
-                if (upstream_sock == SM3T__ERR) {
-                    free(client_ctx);
-                    free(upstream_ctx);
-                    close(client_sock);
-                    continue;
-                }
+                sm3t__set_nonblocking(client_ctx->fd);
+                sm3t__set_peer_meta(client_ctx, &client_addr, conf->tcp.telemetry.enable);
 
-                sm3t__set_nonblocking(upstream_sock);
-                ev.events = EPOLLIN | EPOLLRDHUP;
-
-                client_ctx->peer = upstream_ctx;
-                upstream_ctx->peer = client_ctx;
-
-                client_ctx->fd = client_sock;
                 ev.data.ptr = client_ctx;
                 sm3t__append_poll(&epoll_fd, client_ctx->fd, &ev);
-
-                upstream_ctx->fd = upstream_sock;
-                ev.data.ptr = upstream_ctx;
-                sm3t__append_poll(&epoll_fd, upstream_ctx->fd, &ev);
-
             } else {
                 sm3t_context_t *ctx = ev_list[i].data.ptr;
                 ctx->events = ev_list[i].events;
 
-                if (!conf->ctx_vtable[conf->mode](ctx, epoll_fd)) {
+                if (!conf->ctx_vtable[conf->mode](ctx, NULL, epoll_fd)) {
                     sm3t__remove_poll(&epoll_fd, ctx->fd);
                     sm3t__vec_append(&dead_ctxs, ctx);
                 }

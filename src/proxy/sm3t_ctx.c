@@ -16,9 +16,9 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "core.h"
 #include "logger.h"
-#include "proxy.h"
+#include "sm3t_core.h"
+#include "sm3t_proxy.h"
 
 // TODO: Config integration
 
@@ -57,7 +57,7 @@ void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_stor
 }
 
 // Transparent TCP context handler
-bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
+bool sm3t__ttcp_ctx_handler(void *context, SM3T__MAYBE_UNUSED void *config, int epoll_fd) {
     // TODO: Needs refactoring or a rewrite. Reallllly bulky :/
     // NOTE: works for now, though :)
 
@@ -86,7 +86,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
         if ((n_sent = send(ctx->fd, ctx->buffer + ctx->wstart, ctx->wlen, 0)) == SM3T__ERR) {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;
 
-            log_error("Failed to send queued data to %s:%04u: %s", address, port, strerror(errno));
+            log_error("Queued data not sent %s:%04u: %s", address, port, strerror(errno));
             if (peer != NULL) peer->peer = NULL;
             ctx->peer = NULL;
             return false;
@@ -117,7 +117,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
                 return false;
             }
 
-            log_info("Finished sending queued data to %s:%04u", address, port);
+            log_info("Queued data sent %s:%04u", address, port);
         }
 
         return true;
@@ -129,7 +129,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
         if ((n_recv = recv(fd_in, buff, SM3T_BUFFER_SIZE - 1, 0)) == SM3T__ERR) {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) goto CHECK_HUP;
 
-            log_error("Failed to recv data from %s:%04u: %s", address, port, strerror(errno));
+            log_error("No data recieved %s:%04u: %s", address, port, strerror(errno));
             if (peer != NULL) peer->peer = NULL;
             ctx->peer = NULL;
             return false;
@@ -166,7 +166,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
                 return true;
             }
 
-            log_error("Failed to send data to %s:%04u: %s", address, port, strerror(errno));
+            log_error("No Data sent %s:%04u: %s", address, port, strerror(errno));
             if (peer != NULL) peer->peer = NULL;
             ctx->peer = NULL;
             return false;
@@ -180,7 +180,7 @@ bool sm3t__ttcp_ctx_handler(void *context, int epoll_fd) {
             }
 
             ctx->peer = NULL;
-            log_warn("Zero-byte send to %s:%04u Peer closed", address, port);
+            log_warn("Zero-byte sent: %s:%04u Peer closed", address, port);
             return false;
         }
 
@@ -221,4 +221,35 @@ CHECK_HUP:
     }
 
     return true;
+}
+
+bool sm3t__revp_tcp_ctx_handler(void *context, SM3T__MAYBE_UNUSED void *config, SM3T__MAYBE_UNUSED int epoll_fd) {
+    sm3t_context_t *ctx = (sm3t_context_t *) context;
+    uint8_t *buf = ctx->buffer;
+    if (ctx->events & EPOLLRDHUP) {
+        log_info("Ctx hupped: %s:%u", ctx->meta.addr, ctx->meta.port);
+        return false;
+    }
+
+    if (ctx->events && EPOLLIN) {
+        int n_rcv = recv(ctx->fd, buf, SM3T_BUFFER_SIZE - 1, 0);
+        if (n_rcv > 0) {
+            int n_sent = 0;
+            send(ctx->fd, "ECHO: ", 7, 0);
+            do {
+                n_sent = send(ctx->fd, ctx->buffer, n_rcv, 0);
+            } while (n_sent != n_rcv);
+        } else {
+            log_error("Zero-bytes recieved from: %s:%u", ctx->meta.addr, ctx->meta.port);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool sm3t__socks5__ctx_handler(SM3T__MAYBE_UNUSED void *context, SM3T__MAYBE_UNUSED void *config,
+                               SM3T__MAYBE_UNUSED int epoll_fd) {
+    log_warn("SOCKS5 HANDLER NOT IMPLEMENTED");
+    return false;
 }

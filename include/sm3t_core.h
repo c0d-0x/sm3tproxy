@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 #define SM3T_VERSION "v1.0.0"
-#define SM3T_VEC_MAX 1
+#define SM3T_VEC_MAX 8
 
 #define SM3T__FATAL(...)              \
     do {                              \
@@ -20,6 +20,7 @@
     } while (0)
 
 #define SM3T__OUT_OF_MEMORY() SM3T__FATAL("Out of memory")
+#define SM3T__MAYBE_UNUSED [[maybe_unused]]
 
 typedef struct sm3t_vec {
     size_t size;
