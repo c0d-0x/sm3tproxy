@@ -27,7 +27,6 @@ int main(int argc, char *argv[]) {
         SM3T__FATAL("Invalid port number");
     }
 
-    printf("MODE: %ld\n", *mode);
     sm3t_conf_t *conf = &(sm3t_conf_t){.mode = *mode,
                                        .tcp.listen.port = (uint16_t) *port,
                                        .ctx_vtable[SM3T__MODE_TRANSPARENT] = sm3t__ttcp_ctx_handler,
