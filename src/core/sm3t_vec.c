@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "sm3t_core.h"
+#include "sm3t_utils.h"
 
 bool sm3t__vec_append(sm3t_vec_t **vec, void *data) {
     if (data == NULL) return false;

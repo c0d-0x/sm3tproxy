@@ -8,9 +8,9 @@ typedef bool (*sm3t_ctx_handler_t)(void *, void *, int);
 
 typedef enum : uint8_t {
     SM3T__MODE_TRANSPARENT,
-    SM3t__MODE_REVERSE,
+    SM3T__MODE_PLAIN,
     SM3T__MODE_SOCKS5,
-    SM3t__MODE_COUNT  // counter
+    SM3T__MODE_COUNT
 } sm3t_server_mode_t;
 
 typedef enum : uint8_t {
@@ -56,7 +56,7 @@ typedef enum : uint8_t {
 typedef struct {
     // TODO: Very nested, more refactorn
     sm3t_server_mode_t mode;
-    sm3t_ctx_handler_t ctx_vtable[SM3t__MODE_COUNT];
+    sm3t_ctx_handler_t ctx_vtable[SM3T__MODE_COUNT];
     struct {
         char *name;
         char *user;

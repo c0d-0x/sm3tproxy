@@ -30,7 +30,7 @@ sm3t_context_t *sm3t__new_ctx() {
 
 void sm3t__cleanup_ctx(void *context) {
     sm3t_context_t *ctx = (sm3t_context_t *) context;
-    log_info("Ctx dropped: %s:%04u", ctx->meta.addr, ctx->meta.port);
+    log_info("Connection dropped: %s:%04u", ctx->meta.addr, ctx->meta.port);
     if (ctx->fd > 0) close(ctx->fd);
     free(ctx);
 }
@@ -42,6 +42,7 @@ void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_stor
     if (addr_storage->ss_family == AF_INET6) addr6_nt = (struct sockaddr_in6 *) addr_storage;
     else addr_nt = (struct sockaddr_in *) addr_storage;
 
+    // TODO: Move do display logic in loger instead
     if (!debug) {
         strcpy(ctx->meta.addr, "<<IP>> ");
         ctx->meta.port = 0x00;
@@ -70,17 +71,16 @@ bool sm3t__ttcp_ctx_handler(void *context, SM3T__MAYBE_UNUSED void *config, int 
         if (!ctx->wpartial) {
             ctx->write_eof = true;
             ctx->read_eof = true;
-            shutdown(ctx->fd, SHUT_RDWR);
             return false;
         }
     }
 
+    int fd_in = ctx->fd;
+    int fd_out = ctx->peer->fd;
+    uint8_t *buff = ctx->buffer;
     char *address = ctx->meta.addr;
     uint32_t port = ctx->meta.port;
-    int fd_in = ctx->fd;
     sm3t_context_t *peer = ctx->peer;
-    int fd_out = (peer != NULL) ? peer->fd : SM3T__ERR;
-    uint8_t *buff = ctx->buffer;
 
     if ((ctx->events & EPOLLOUT) && ctx->wpartial) {
         if ((n_sent = send(ctx->fd, ctx->buffer + ctx->wstart, ctx->wlen, 0)) == SM3T__ERR) {
@@ -223,7 +223,7 @@ CHECK_HUP:
     return true;
 }
 
-bool sm3t__revp_tcp_ctx_handler(void *context, SM3T__MAYBE_UNUSED void *config, SM3T__MAYBE_UNUSED int epoll_fd) {
+bool sm3t__tcp_ctx_handler(void *context, SM3T__MAYBE_UNUSED void *config, SM3T__MAYBE_UNUSED int epoll_fd) {
     sm3t_context_t *ctx = (sm3t_context_t *) context;
     uint8_t *buf = ctx->buffer;
     if (ctx->events & EPOLLRDHUP) {

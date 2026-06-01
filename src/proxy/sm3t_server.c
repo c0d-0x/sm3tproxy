@@ -30,6 +30,7 @@
 #include "sm3t_conf.h"
 #include "sm3t_core.h"
 #include "sm3t_proxy.h"
+#include "sm3t_utils.h"
 
 static void sm3t__close_server(sm3t_server_t *server) {
     if (server == NULL) return;
@@ -175,7 +176,6 @@ void sm3t__run_server(void *config) {
 
         for (int i = 0; i < n_events; i++) {
             if (ev_list[i].data.fd == server->sock) {
-                log_info("New incoming connection");
                 sm3t_context_t *client_ctx = sm3t__new_ctx();
 
                 client_ctx->fd = accept(server->sock, NULL, NULL);
@@ -192,6 +192,9 @@ void sm3t__run_server(void *config) {
                     sm3t__cleanup_ctx(client_ctx);
                     continue;
                 }
+
+                sm3t__set_peer_meta(client_ctx, &client_addr, true);
+                log_info("New client connection: %s:%u", client_ctx->meta.addr, client_ctx->meta.port);
 
                 if (conf->mode == SM3T__MODE_TRANSPARENT) {
                     sm3t_context_t *upstream_ctx = sm3t__new_ctx();
@@ -228,15 +231,13 @@ void sm3t__run_server(void *config) {
                 }
 
                 sm3t__set_nonblocking(client_ctx->fd);
-                sm3t__set_peer_meta(client_ctx, &client_addr, conf->tcp.telemetry.enable);
-
                 ev.data.ptr = client_ctx;
                 sm3t__append_poll(&epoll_fd, client_ctx->fd, &ev);
             } else {
                 sm3t_context_t *ctx = ev_list[i].data.ptr;
                 ctx->events = ev_list[i].events;
 
-                if (!conf->ctx_vtable[conf->mode](ctx, NULL, epoll_fd)) {
+                if (!conf->ctx_vtable[conf->mode](ctx, conf, epoll_fd)) {
                     sm3t__remove_poll(&epoll_fd, ctx->fd);
                     sm3t__vec_append(&dead_ctxs, ctx);
                 }

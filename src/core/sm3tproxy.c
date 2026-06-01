@@ -18,7 +18,7 @@ int main(int argc, char *argv[]) {
                                    .default_value = SM3T_DEFAULT_PORT);
     const bool *debug = option_flag(&cmd_arg, "debug", "Show debug info", .short_name = 'd');
     const size_t *mode = option_enum(&cmd_arg, "mode", "Specify proxy server mode",
-                                     ((const char *[]){"TTCP", "REV", "SOCKS5", NULL}), .short_name = 'm');
+                                     ((const char *[]){"TTCP", "TCP", "SOCKS5", NULL}), .short_name = 'm');
     char **positional_args;
     parse_args(&cmd_arg, argc, argv, &positional_args);
 
@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
     sm3t_conf_t *conf = &(sm3t_conf_t){.mode = *mode,
                                        .tcp.listen.port = (uint16_t) *port,
                                        .ctx_vtable[SM3T__MODE_TRANSPARENT] = sm3t__ttcp_ctx_handler,
-                                       .ctx_vtable[SM3t__MODE_REVERSE] = sm3t__revp_tcp_ctx_handler,
+                                       .ctx_vtable[SM3T__MODE_PLAIN] = sm3t__tcp_ctx_handler,
                                        .ctx_vtable[SM3T__MODE_SOCKS5] = sm3t__socks5__ctx_handler,
                                        .tcp.telemetry.enable = *debug};
     sm3t__run_server(conf);

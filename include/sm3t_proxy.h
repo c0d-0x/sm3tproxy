@@ -57,7 +57,7 @@ void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_stor
 sm3t_context_t *sm3t__new_ctx(void);
 void sm3t__cleanup_ctx(void *ctx);
 bool sm3t__ttcp_ctx_handler(void *ctx, void *conf, int epoll_fd);
-bool sm3t__revp_tcp_ctx_handler(void *ctx, void *conf, int epoll_fd);
+bool sm3t__tcp_ctx_handler(void *ctx, void *conf, int epoll_fd);
 bool sm3t__socks5__ctx_handler(void *ctx, void *conf, int epoll_fd);
 
 #endif  // !SM3T_PROXY_H
