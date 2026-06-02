@@ -8,10 +8,15 @@ typedef bool (*sm3t_ctx_handler_t)(void *, void *, int);
 
 typedef enum : uint8_t {
     SM3T__MODE_TRANSPARENT,
-    SM3T__MODE_PLAIN,
+    SM3T__MODE_FORWARD,
     SM3T__MODE_SOCKS5,
     SM3T__MODE_COUNT
 } sm3t_server_mode_t;
+
+typedef enum : uint8_t {
+    IPV4,
+    IPV6
+} sm3t_addr_var_t;
 
 typedef enum : uint8_t {
     SM3T__LOG_ERROR,
@@ -52,6 +57,14 @@ typedef enum : uint8_t {
     SM3T__BACKPRESSURE_STALL,
     SM3T__BACKPRESSURE_CLOSE
 } sm3t_backpressure_policy_t;
+
+typedef struct {
+    char *name;
+    sm3t_addr_var_t ver;
+    char *address;
+    uint16_t port;
+    uint32_t weight;
+} sm3t_upstreams_t;
 
 typedef struct {
     // TODO: Very nested, more refactorn
@@ -115,13 +128,7 @@ typedef struct {
 
         struct {
             sm3t_forwarding_mode_t mode;
-            struct {
-                char *name;
-                char *address;
-                uint16_t port;
-                uint32_t weight;
-            } *upstreams;
-
+            sm3t_upstreams_t *upstreams;
             size_t upstreams_count;
             sm3t_failure_policy_t failure_policy;
         } forward;
@@ -146,12 +153,6 @@ typedef struct {
         } conn;
 
         struct {
-            struct {
-                size_t read_size;
-                size_t write_size;
-                size_t max;
-            } buffer;
-
             sm3t_backpressure_policy_t backpressure;
         } flow_control;
 

@@ -24,6 +24,7 @@
 
 typedef enum {
     SM3T__OK = 0,
+    SM3T__OKK = 1,
     SM3T__ERR = -1,
     SM3T__ERR_TIMEOUT = -2,
     SM3T__ERR_PROTOCOL = -3

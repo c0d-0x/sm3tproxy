@@ -196,10 +196,10 @@ void sm3t__run_server(void *config) {
                 sm3t__set_peer_meta(client_ctx, &client_addr, true);
                 log_info("New client connection: %s:%u", client_ctx->meta.addr, client_ctx->meta.port);
 
+                sm3t_context_t *upstream_ctx = sm3t__new_ctx();
+                struct sockaddr_storage upstream_addr = {};
+                socklen_t upstream_addr_len = sizeof(upstream_addr);
                 if (conf->mode == SM3T__MODE_TRANSPARENT) {
-                    sm3t_context_t *upstream_ctx = sm3t__new_ctx();
-                    struct sockaddr_storage upstream_addr = {};
-                    socklen_t upstream_addr_len = sizeof(upstream_addr);
                     if (getsockopt(client_ctx->fd, SOL_IP, SO_ORIGINAL_DST, (struct sockaddr *) &upstream_addr,
                                    &upstream_addr_len)
                         == SM3T__ERR) {
@@ -209,26 +209,57 @@ void sm3t__run_server(void *config) {
 
                         continue;
                     }
+                } else if (conf->mode == SM3T__MODE_FORWARD) {
+                    if (conf->tcp.forward.upstreams->ver == IPV4) {
+                        // TODO: fetch all upstreams into a circular qeueu, prio
+                        struct sockaddr_in addr = {
+                            .sin_family = AF_INET,
+                            .sin_port = htons(conf->tcp.forward.upstreams->port),
+                        };
 
-                    sm3t__set_peer_meta(upstream_ctx, &upstream_addr, conf->tcp.telemetry.enable);
-                    int upstream_sock
-                        = sm3t__connect_upstream(&upstream_addr, upstream_ctx->meta.addr, upstream_ctx->meta.port);
-                    if (upstream_sock == SM3T__ERR) {
-                        sm3t__cleanup_ctx(client_ctx);
-                        sm3t__cleanup_ctx(upstream_ctx);
-                        continue;
+                        if (inet_pton(AF_INET, conf->tcp.forward.upstreams->address, &addr.sin_addr) != SM3T__OKK) {
+                            log_error("Failed to prepare upstream address");
+                            sm3t__cleanup_ctx(client_ctx);
+                            continue;
+                        }
+
+                        upstream_addr = *(struct sockaddr_storage *) &addr;
+                    } else {
+                        struct sockaddr_in6 addr = {
+                            .sin6_addr = AF_INET6,
+                            .sin6_port = htons(conf->tcp.forward.upstreams->port),
+                        };
+
+                        if (inet_pton(AF_INET6, conf->tcp.forward.upstreams->address, &addr.sin6_addr) != SM3T__OKK) {
+                            log_error("Failed to prepare upstream address");
+                            sm3t__cleanup_ctx(client_ctx);
+                            continue;
+                        }
+
+                        upstream_addr = *(struct sockaddr_storage *) &addr;
                     }
-
-                    sm3t__set_nonblocking(upstream_sock);
-                    ev.events = EPOLLIN | EPOLLRDHUP;
-
-                    client_ctx->peer = upstream_ctx;
-                    upstream_ctx->peer = client_ctx;
-
-                    upstream_ctx->fd = upstream_sock;
-                    ev.data.ptr = upstream_ctx;
-                    sm3t__append_poll(&epoll_fd, upstream_ctx->fd, &ev);
                 }
+                // else {
+                //     // TODO: socks5 pre-connection workload
+                // }
+
+                sm3t__set_peer_meta(upstream_ctx, &upstream_addr, conf->tcp.telemetry.enable);
+                upstream_ctx->fd
+                    = sm3t__connect_upstream(&upstream_addr, upstream_ctx->meta.addr, upstream_ctx->meta.port);
+                if (upstream_ctx->fd == SM3T__ERR) {
+                    sm3t__cleanup_ctx(client_ctx);
+                    sm3t__cleanup_ctx(upstream_ctx);
+                    continue;
+                }
+
+                sm3t__set_nonblocking(upstream_ctx->fd);
+                ev.events = EPOLLIN | EPOLLRDHUP;
+
+                client_ctx->peer = upstream_ctx;
+                upstream_ctx->peer = client_ctx;
+
+                ev.data.ptr = upstream_ctx;
+                sm3t__append_poll(&epoll_fd, upstream_ctx->fd, &ev);
 
                 sm3t__set_nonblocking(client_ctx->fd);
                 ev.data.ptr = client_ctx;

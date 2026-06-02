@@ -57,8 +57,8 @@ void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_stor
     inet_ntop(addr_storage->ss_family, addr, ctx->meta.addr, addr_len);
 }
 
-// Transparent TCP context handler
-bool sm3t__ttcp_ctx_handler(void *context, SM3T__MAYBE_UNUSED void *config, int epoll_fd) {
+// TCP context handler
+bool sm3t__tcp_ctx_handler(void *context, SM3T__MAYBE_UNUSED void *config, int epoll_fd) {
     // TODO: Needs refactoring or a rewrite. Reallllly bulky :/
     // NOTE: works for now, though :)
 
@@ -223,7 +223,7 @@ CHECK_HUP:
     return true;
 }
 
-bool sm3t__tcp_ctx_handler(void *context, SM3T__MAYBE_UNUSED void *config, SM3T__MAYBE_UNUSED int epoll_fd) {
+bool sm3t__tcp_echo(void *context, SM3T__MAYBE_UNUSED void *config, SM3T__MAYBE_UNUSED int epoll_fd) {
     sm3t_context_t *ctx = (sm3t_context_t *) context;
     uint8_t *buf = ctx->buffer;
     if (ctx->events & EPOLLRDHUP) {

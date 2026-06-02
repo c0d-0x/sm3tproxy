@@ -10,7 +10,6 @@ void print_help(Args *a, const char *program);
 
 // TODO: Drop unnecessary CAPS
 int main(int argc, char *argv[]) {
-    // NOTE: Runs in either TCP transparent or plain mode.
     Args cmd_arg = {};
     option_help(&cmd_arg, print_help);
     option_version(&cmd_arg, "sm3tproxy-" SM3T_VERSION);
@@ -27,12 +26,17 @@ int main(int argc, char *argv[]) {
         SM3T__FATAL("Invalid port number");
     }
 
-    sm3t_conf_t *conf = &(sm3t_conf_t){.mode = *mode,
-                                       .tcp.listen.port = (uint16_t) *port,
-                                       .ctx_vtable[SM3T__MODE_TRANSPARENT] = sm3t__ttcp_ctx_handler,
-                                       .ctx_vtable[SM3T__MODE_PLAIN] = sm3t__tcp_ctx_handler,
-                                       .ctx_vtable[SM3T__MODE_SOCKS5] = sm3t__socks5__ctx_handler,
-                                       .tcp.telemetry.enable = *debug};
+    sm3t_conf_t *conf = &(sm3t_conf_t){
+        .mode = *mode,
+        .tcp.listen.port = (uint16_t) *port,
+        .ctx_vtable[SM3T__MODE_TRANSPARENT] = sm3t__tcp_ctx_handler,
+        .ctx_vtable[SM3T__MODE_FORWARD] = sm3t__tcp_ctx_handler,
+        .ctx_vtable[SM3T__MODE_SOCKS5] = sm3t__tcp_echo,
+        .tcp.telemetry.enable = *debug,
+        .tcp.forward.upstreams
+        = &(sm3t_upstreams_t){.name = "localhost", .ver = IPV4, .address = "127.0.0.1", .port = 3000},
+    };
+
     sm3t__run_server(conf);
     free_args(&cmd_arg);
     return EXIT_SUCCESS;
@@ -46,7 +50,7 @@ void print_help(Args *a, const char *program) {
     fprintf(stdout, "\n");
     print_options(a, stdout);
     fprintf(stdout, "   Mode:\n");
-    fprintf(stdout, "        TTCP - Transparent proxy mode\n");
-    fprintf(stdout, "        REV - Reverse proxy mode\n");
+    fprintf(stdout, "        TTCP   - Transparent proxy mode\n");
+    fprintf(stdout, "        TCP    - Forward proxy mode\n");
     fprintf(stdout, "        SOCKS5 - SOCKS5 proxy mode\n");
 }

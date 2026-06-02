@@ -4,9 +4,9 @@ CFLAGS         := -Wall -g -std=c23 -Wextra -Wformat-security -Wformat-overflow=
 # CFLAGS		   += -O3 -s # strip bin
 # Debugging params 
 CFLAGS		   += -ggdb
-CFLAGS 		   += -fsanitize=address
-CFLAGS 		   += -fno-omit-frame-pointer
-CFLAGS		   += -fsanitize-recover=address
+# CFLAGS 		   += -fsanitize=address
+# CFLAGS 		   += -fno-omit-frame-pointer
+# CFLAGS		   += -fsanitize-recover=address
 
 
 INCLUDE        := -Iinclude -Ilib
