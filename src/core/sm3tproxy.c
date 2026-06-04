@@ -1,5 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include "args.h"
 #include "sm3t_conf.h"
@@ -26,15 +28,23 @@ int main(int argc, char *argv[]) {
         SM3T__FATAL("Invalid port number");
     }
 
-    sm3t_conf_t *conf = &(sm3t_conf_t){
+    sm3t_upstreams_t domains[] = {
+        {.name = "localhost", .ver = IPV4, .address = "127.0.0.1", .port = 4000},
+        {.name = "localhost", .ver = IPV4, .address = "127.0.0.1", .port = 3000}
+    };
+
+    sm3t_conf_t *conf = malloc(sizeof(sm3t_conf_t));
+    if (conf == NULL) SM3T__OUT_OF_MEMORY();
+
+    *conf = (sm3t_conf_t){
         .mode = *mode,
         .tcp.listen.port = (uint16_t) *port,
         .ctx_vtable[SM3T__MODE_TRANSPARENT] = sm3t__tcp_ctx_handler,
         .ctx_vtable[SM3T__MODE_FORWARD] = sm3t__tcp_ctx_handler,
         .ctx_vtable[SM3T__MODE_SOCKS5] = sm3t__tcp_echo,
         .tcp.telemetry.enable = *debug,
-        .tcp.forward.upstreams
-        = &(sm3t_upstreams_t){.name = "localhost", .ver = IPV4, .address = "127.0.0.1", .port = 3000},
+        .tcp.forward.upstreams = domains,
+        .tcp.forward.upstreams_count = 2,
     };
 
     sm3t__run_server(conf);

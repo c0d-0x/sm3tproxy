@@ -15,19 +15,19 @@ static inline bool ascii_isspace(char cc) {
     return cc == ' ' || cc == '\t' || cc == '\r' || cc == '\n' || cc == '\v' || cc == '\f';
 }
 
-bool sm3t_view_empty(sm3t_view_t *view) { return (view == NULL || view->data == NULL || view->len == 0); }
+bool sm3t__view_empty(sm3t_view_t *view) { return (view == NULL || view->data == NULL || view->len == 0); }
 
-sm3t_view_t sm3t_view(const char *data, int64_t len) {
+sm3t_view_t sm3t__view(const char *data, int64_t len) {
     if (data == NULL) return (sm3t_view_t){.data = NULL, .len = 0};
     return (sm3t_view_t){.data = (char *) data, .len = len};
 }
 
-sm3t_view_t sm3t_view_cstr(const char *str) {
+sm3t_view_t sm3t__view_cstr(const char *str) {
     if (str == NULL) return (sm3t_view_t){.data = NULL, .len = 0};
     return (sm3t_view_t){.data = (char *) str, .len = strlen(str)};
 }
 
-sm3t_view_t sm3t_view_slice(sm3t_view_t *view, int64_t offset, int64_t len) {
+sm3t_view_t sm3t__view_slice(sm3t_view_t *view, int64_t offset, int64_t len) {
     if (view == NULL || view->data == NULL || offset >= view->len) return (sm3t_view_t){.data = NULL, .len = 0};
 
     int64_t rem = view->len - offset;
@@ -35,21 +35,21 @@ sm3t_view_t sm3t_view_slice(sm3t_view_t *view, int64_t offset, int64_t len) {
     return (sm3t_view_t){.data = view->data + offset, .len = len};
 }
 
-sm3t_view_t sm3t_view_skip(sm3t_view_t *view, int64_t n) {
+sm3t_view_t sm3t__view_skip(sm3t_view_t *view, int64_t n) {
     if (view == NULL || view->data == NULL || n >= view->len) return (sm3t_view_t){.data = NULL, .len = 0};
     return (sm3t_view_t){.data = view->data + n, .len = view->len - n};
 }
 
-bool sm3t_view_starts_with(sm3t_view_t *view, sm3t_view_t *prefix) {
+bool sm3t__view_starts_with(sm3t_view_t *view, sm3t_view_t *prefix) {
     if (prefix == NULL || prefix->len == 0) return true;
     if (view == NULL || view->data == NULL || view->len < prefix->len || prefix->data == NULL) return false;
 
     return memcmp(view->data, prefix->data, prefix->len) == 0;
 }
 
-bool sm3t_view_eq(sm3t_view_t *viewa, sm3t_view_t *viewb) {
-    bool empty_a = sm3t_view_empty(viewa);
-    bool empty_b = sm3t_view_empty(viewb);
+bool sm3t__view_eq(sm3t_view_t *viewa, sm3t_view_t *viewb) {
+    bool empty_a = sm3t__view_empty(viewa);
+    bool empty_b = sm3t__view_empty(viewb);
 
     if (empty_a && empty_b) return true;
     if (empty_a || empty_b) return false;
@@ -58,7 +58,7 @@ bool sm3t_view_eq(sm3t_view_t *viewa, sm3t_view_t *viewb) {
     return memcmp(viewa->data, viewb->data, viewa->len) == 0;
 }
 
-bool sm3t_view_ends_with(sm3t_view_t *view, sm3t_view_t *suffix) {
+bool sm3t__view_ends_with(sm3t_view_t *view, sm3t_view_t *suffix) {
     if (suffix == NULL || suffix->len == 0) return true;
     if (view == NULL || view->data == NULL || view->len < suffix->len || suffix->data == NULL) return false;
 
@@ -66,7 +66,7 @@ bool sm3t_view_ends_with(sm3t_view_t *view, sm3t_view_t *suffix) {
     return memcmp(view->data + offset, suffix->data, suffix->len) == 0;
 }
 
-int64_t sm3t_view_find(sm3t_view_t *view, sm3t_view_t *needle, int64_t start_offset) {
+int64_t sm3t__view_find(sm3t_view_t *view, sm3t_view_t *needle, int64_t start_offset) {
     if (view == NULL || view->data == NULL || needle == NULL || needle->data == NULL) return SM3T_NOT_FOUND;
     if (needle->len == 0) return start_offset <= view->len ? start_offset : SM3T_NOT_FOUND;
 
@@ -82,7 +82,7 @@ int64_t sm3t_view_find(sm3t_view_t *view, sm3t_view_t *needle, int64_t start_off
     return SM3T_NOT_FOUND;
 }
 
-int64_t sm3t_view_find_char(sm3t_view_t *view, char cc, int64_t start_offset) {
+int64_t sm3t__view_find_char(sm3t_view_t *view, char cc, int64_t start_offset) {
     if (view == NULL || view->data == NULL || start_offset >= view->len) return SM3T_NOT_FOUND;
 
     for (int64_t i = start_offset; i < view->len; i++) {
@@ -94,10 +94,10 @@ int64_t sm3t_view_find_char(sm3t_view_t *view, char cc, int64_t start_offset) {
     return SM3T_NOT_FOUND;
 }
 
-bool sm3t_view_split(sm3t_view_t *view, char delim, sm3t_view_t *left, sm3t_view_t *right) {
+bool sm3t__view_split(sm3t_view_t *view, char delim, sm3t_view_t *left, sm3t_view_t *right) {
     if (view == NULL || view->data == NULL || left == NULL || right == NULL) return false;
 
-    int64_t idx = sm3t_view_find_char(view, delim, 0);
+    int64_t idx = sm3t__view_find_char(view, delim, 0);
     if (idx == SM3T_NOT_FOUND) {
         *left = *view;
         *right = (sm3t_view_t){.data = NULL, .len = 0};
@@ -115,12 +115,12 @@ bool sm3t_view_split(sm3t_view_t *view, char delim, sm3t_view_t *left, sm3t_view
     return true;
 }
 
-sm3t_view_t sm3t_view_trim(sm3t_view_t *view) {
-    sm3t_view_t ltrimmed = sm3t_view_trim_left(view);
-    return sm3t_view_trim_right(&ltrimmed);
+sm3t_view_t sm3t__view_trim(sm3t_view_t *view) {
+    sm3t_view_t ltrimmed = sm3t__view_trim_left(view);
+    return sm3t__view_trim_right(&ltrimmed);
 }
 
-sm3t_view_t sm3t_view_trim_left(sm3t_view_t *view) {
+sm3t_view_t sm3t__view_trim_left(sm3t_view_t *view) {
     if (view == NULL || view->data == NULL) return (sm3t_view_t){.data = NULL, .len = 0};
 
     int64_t start = 0;
@@ -130,7 +130,7 @@ sm3t_view_t sm3t_view_trim_left(sm3t_view_t *view) {
     return (sm3t_view_t){.data = view->data + start, .len = view->len - start};
 }
 
-sm3t_view_t sm3t_view_trim_right(sm3t_view_t *view) {
+sm3t_view_t sm3t__view_trim_right(sm3t_view_t *view) {
     if (view == NULL || view->data == NULL || view->len == 0) return (sm3t_view_t){.data = NULL, .len = 0};
 
     int64_t end = view->len;
@@ -140,9 +140,9 @@ sm3t_view_t sm3t_view_trim_right(sm3t_view_t *view) {
     return (sm3t_view_t){.data = view->data, .len = end};
 }
 
-bool sm3t_view_eq_case(sm3t_view_t *viewa, sm3t_view_t *viewb) {
-    bool empty_a = sm3t_view_empty(viewa);
-    bool empty_b = sm3t_view_empty(viewb);
+bool sm3t__view_eq_case(sm3t_view_t *viewa, sm3t_view_t *viewb) {
+    bool empty_a = sm3t__view_empty(viewa);
+    bool empty_b = sm3t__view_empty(viewb);
 
     if (empty_a && empty_b) return true;
     if (empty_a || empty_b) return false;
@@ -155,7 +155,7 @@ bool sm3t_view_eq_case(sm3t_view_t *viewa, sm3t_view_t *viewb) {
     return true;
 }
 
-bool sm3t_view_starts_with_case(sm3t_view_t *view, sm3t_view_t *prefix) {
+bool sm3t__view_starts_with_case(sm3t_view_t *view, sm3t_view_t *prefix) {
     if (prefix == NULL || prefix->len == 0) return true;
     if (view == NULL || view->data == NULL || view->len < prefix->len || prefix->data == NULL) return false;
 
@@ -166,7 +166,7 @@ bool sm3t_view_starts_with_case(sm3t_view_t *view, sm3t_view_t *prefix) {
     return true;
 }
 
-bool sm3t_view_to_u32(sm3t_view_t *view, uint32_t *out) {
+bool sm3t__view_to_u32(sm3t_view_t *view, uint32_t *out) {
     if (view == NULL || view->data == NULL || view->len == 0 || out == NULL) return false;
 
     uint64_t val = 0;
@@ -182,7 +182,7 @@ bool sm3t_view_to_u32(sm3t_view_t *view, uint32_t *out) {
     return true;
 }
 
-char *sm3t_view_to_cstr(sm3t_view_t *view) {
+char *sm3t__view_to_cstr(sm3t_view_t *view) {
     if (view == NULL || view->data == NULL || view->len == 0) {
         return NULL;
     }

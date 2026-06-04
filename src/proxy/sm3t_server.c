@@ -1,5 +1,6 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#include <sched.h>
 #endif
 
 #ifndef _POSIX_C_SOURCE
@@ -146,6 +147,8 @@ int sm3t__connect_upstream(struct sockaddr_storage *server_addr, char *ip, int p
 
 void sm3t__run_server(void *config) {
     sm3t_conf_t *conf = (sm3t_conf_t *) config;
+    if (conf == NULL) return;
+
     sm3t_server_t *server = sm3t__init_server(conf);
     if (server == NULL) return;
 
@@ -164,7 +167,15 @@ void sm3t__run_server(void *config) {
     }
 
     sm3t_vec_t *dead_ctxs = NULL;
+    sm3t_queue_t *forward_domains = NULL;
     struct epoll_event ev_list[SM3T_MAX_EVENT] = {};
+
+    if (conf->mode == SM3T__MODE_FORWARD) {
+        int count = conf->tcp.forward.upstreams_count;
+        for (int i = 0; i < count; i++) {
+            sm3t__enqueue(&forward_domains, conf->tcp.forward.upstreams + i);
+        }
+    }
 
     log_info("SM3TPROXY RUNNING ON: %s::%04u", server->meta.addr, server->meta.port);
     while (true) {
@@ -199,49 +210,67 @@ void sm3t__run_server(void *config) {
                 sm3t_context_t *upstream_ctx = sm3t__new_ctx();
                 struct sockaddr_storage upstream_addr = {};
                 socklen_t upstream_addr_len = sizeof(upstream_addr);
-                if (conf->mode == SM3T__MODE_TRANSPARENT) {
-                    if (getsockopt(client_ctx->fd, SOL_IP, SO_ORIGINAL_DST, (struct sockaddr *) &upstream_addr,
-                                   &upstream_addr_len)
-                        == SM3T__ERR) {
-                        log_error("Failed to get upstream's original dest");
+                switch (conf->mode) {
+                    case SM3T__MODE_TRANSPARENT:
+                        if (getsockopt(client_ctx->fd, SOL_IP, SO_ORIGINAL_DST, (struct sockaddr *) &upstream_addr,
+                                       &upstream_addr_len)
+                            == SM3T__ERR) {
+                            log_error("Failed to get upstream's original dest");
+                            sm3t__cleanup_ctx(client_ctx);
+                            sm3t__cleanup_ctx(upstream_ctx);
+
+                            continue;
+                        }
+                        break;
+
+                    case SM3T__MODE_FORWARD:
+                        sm3t_upstreams_t *upstream = sm3t__dequeue(forward_domains);
+                        if (upstream == NULL) {
+                            log_error("Empty forward domain");
+                            sm3t__cleanup_ctx(client_ctx);
+                            sm3t__cleanup_ctx(upstream_ctx);
+                            continue;
+                        }
+
+                        if (upstream->ver == IPV4) {
+                            // TODO: fetch all upstreams into a circular qeueu, prio
+                            struct sockaddr_in addr = {
+                                .sin_family = AF_INET,
+                                .sin_port = htons(upstream->port),
+                            };
+
+                            if (inet_pton(AF_INET, upstream->address, &addr.sin_addr) != SM3T__OKK) {
+                                log_error("Failed to prepare upstream address");
+                                sm3t__cleanup_ctx(client_ctx);
+                                sm3t__cleanup_ctx(upstream_ctx);
+                                continue;
+                            }
+
+                            upstream_addr = *(struct sockaddr_storage *) &addr;
+                        } else {
+                            struct sockaddr_in6 addr = {
+                                .sin6_addr = AF_INET6,
+                                .sin6_port = htons(upstream->port),
+                            };
+
+                            if (inet_pton(AF_INET6, upstream->address, &addr.sin6_addr) != SM3T__OKK) {
+                                log_error("Failed to prepare upstream address");
+                                sm3t__cleanup_ctx(client_ctx);
+                                sm3t__cleanup_ctx(upstream_ctx);
+                                continue;
+                            }
+
+                            upstream_addr = *(struct sockaddr_storage *) &addr;
+                        }
+                        break;
+                    // case SM3T__MODE_SOCKS5:
+                    // TODO: socks5 pre-connection workload
+                    // break
+                    default:
                         sm3t__cleanup_ctx(client_ctx);
                         sm3t__cleanup_ctx(upstream_ctx);
-
                         continue;
-                    }
-                } else if (conf->mode == SM3T__MODE_FORWARD) {
-                    if (conf->tcp.forward.upstreams->ver == IPV4) {
-                        // TODO: fetch all upstreams into a circular qeueu, prio
-                        struct sockaddr_in addr = {
-                            .sin_family = AF_INET,
-                            .sin_port = htons(conf->tcp.forward.upstreams->port),
-                        };
-
-                        if (inet_pton(AF_INET, conf->tcp.forward.upstreams->address, &addr.sin_addr) != SM3T__OKK) {
-                            log_error("Failed to prepare upstream address");
-                            sm3t__cleanup_ctx(client_ctx);
-                            continue;
-                        }
-
-                        upstream_addr = *(struct sockaddr_storage *) &addr;
-                    } else {
-                        struct sockaddr_in6 addr = {
-                            .sin6_addr = AF_INET6,
-                            .sin6_port = htons(conf->tcp.forward.upstreams->port),
-                        };
-
-                        if (inet_pton(AF_INET6, conf->tcp.forward.upstreams->address, &addr.sin6_addr) != SM3T__OKK) {
-                            log_error("Failed to prepare upstream address");
-                            sm3t__cleanup_ctx(client_ctx);
-                            continue;
-                        }
-
-                        upstream_addr = *(struct sockaddr_storage *) &addr;
-                    }
                 }
-                // else {
-                //     // TODO: socks5 pre-connection workload
-                // }
 
                 sm3t__set_peer_meta(upstream_ctx, &upstream_addr, conf->tcp.telemetry.enable);
                 upstream_ctx->fd
@@ -280,6 +309,7 @@ void sm3t__run_server(void *config) {
 
     close(epoll_fd);
     sm3t__close_server(server);
+    sm3t__free_queue(&forward_domains);
     sm3t__cleanup_vec(dead_ctxs, sm3t__cleanup_ctx);
     sm3t__destroy_vec(dead_ctxs);
 }
