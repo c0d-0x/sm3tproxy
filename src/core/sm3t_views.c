@@ -1,5 +1,6 @@
 #include <sched.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -103,9 +104,9 @@ bool sm3t__view_split(sm3t_view_t *view, char delim, sm3t_view_t *left, sm3t_vie
         *right = (sm3t_view_t){.data = NULL, .len = 0};
         return false;
     }
-    *left = (sm3t_view_t){.data = view->data, .len = idx};
 
     int64_t right_offset = idx + 1;
+    *left = (sm3t_view_t){.data = view->data, .len = idx};
     if (right_offset >= view->len) {
         *right = (sm3t_view_t){.data = NULL, .len = 0};
     } else {
@@ -171,10 +172,10 @@ bool sm3t__view_to_u32(sm3t_view_t *view, uint32_t *out) {
 
     uint64_t val = 0;
     for (int64_t i = 0; i < view->len; i++) {
-        char c = view->data[i];
-        if (c < '0' || c > '9') return false;
+        char cc = view->data[i];
+        if (cc < '0' || cc > '9') return false;
 
-        val = val * 10 + (c - '0');
+        val = val * 10 + (cc - '0');
         if (val > UINT32_MAX) return false;
     }
 

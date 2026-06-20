@@ -1,6 +1,5 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
-#include <sched.h>
 #endif
 
 #ifndef _POSIX_C_SOURCE
@@ -167,6 +166,7 @@ void sm3t__run_server(void *config) {
     }
 
     sm3t_vec_t *dead_ctxs = NULL;
+    sm3t_upstream_t *upstream = NULL;
     sm3t_queue_t *forward_domains = NULL;
     struct epoll_event ev_list[SM3T_MAX_EVENT] = {};
 
@@ -224,8 +224,7 @@ void sm3t__run_server(void *config) {
                         break;
 
                     case SM3T__MODE_FORWARD:
-                        sm3t_upstreams_t *upstream = sm3t__dequeue(forward_domains);
-                        if (upstream == NULL) {
+                        if ((upstream = sm3t__dequeue(forward_domains)) == NULL) {
                             log_error("Empty forward domain");
                             sm3t__cleanup_ctx(client_ctx);
                             sm3t__cleanup_ctx(upstream_ctx);

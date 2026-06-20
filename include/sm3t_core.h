@@ -1,13 +1,8 @@
 #ifndef SM3T_CORE_H
 #define SM3T_CORE_H
 
-#include <stddef.h>
-#include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <sys/epoll.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #define SM3T_VERSION "v1.0.0"
 

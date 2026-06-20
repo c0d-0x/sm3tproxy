@@ -1,3 +1,4 @@
+#include <lua.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,7 +29,7 @@ int main(int argc, char *argv[]) {
         SM3T__FATAL("Invalid port number");
     }
 
-    sm3t_upstreams_t domains[] = {
+    sm3t_upstream_t domains[] = {
         {.name = "localhost", .ver = IPV4, .address = "127.0.0.1", .port = 4000},
         {.name = "localhost", .ver = IPV4, .address = "127.0.0.1", .port = 3000}
     };
@@ -47,8 +48,10 @@ int main(int argc, char *argv[]) {
         .tcp.forward.upstreams_count = 2,
     };
 
+    lua_State *L = sm3t__parse_conf("examples/conf.lua");
     sm3t__run_server(conf);
     free_args(&cmd_arg);
+    lua_close(L);
     return EXIT_SUCCESS;
 }
 

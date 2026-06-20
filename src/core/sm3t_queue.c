@@ -20,7 +20,7 @@ bool sm3t__enqueue(sm3t_queue_t **queue, void *data) {
     }
 
     if (sm3t__queue_full(*queue)) {
-        sm3t_queue_t *tmp = realloc(*queue, sizeof(queue) + sizeof(data) * (*queue)->capacity * 2);
+        sm3t_queue_t *tmp = realloc(*queue, sizeof(sm3t_queue_t) + sizeof(data) * (*queue)->capacity * 2);
         if (tmp == NULL) SM3T__OUT_OF_MEMORY();
 
         *queue = tmp;

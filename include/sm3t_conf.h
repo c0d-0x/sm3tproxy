@@ -1,6 +1,8 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// TODO: NOT needed entirely as the config will be handled with lua
+#include <lua.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -64,7 +66,7 @@ typedef struct {
     char *address;
     uint16_t port;
     uint32_t weight;
-} sm3t_upstreams_t;
+} sm3t_upstream_t;
 
 typedef struct {
     // TODO: Very nested, more refactorn
@@ -128,7 +130,7 @@ typedef struct {
 
         struct {
             sm3t_forwarding_mode_t mode;
-            sm3t_upstreams_t *upstreams;
+            sm3t_upstream_t *upstreams;
             size_t upstreams_count;
             sm3t_failure_policy_t failure_policy;
         } forward;
@@ -188,8 +190,7 @@ typedef struct {
     } tcp;
 } sm3t_conf_t;
 
-sm3t_conf_t *sm3t__parse_conf(char *path);
-sm3t_conf_t *sm3t__reload_conf(char *path);
-sm3t_conf_t *sm3t__dump_conf(char *path);
-
+lua_State *sm3t__parse_conf(char *path);
+bool sm3t__reload_conf(lua_State *L);
+sm3t_conf_t *sm3t_cleanup_conf(lua_State *L);
 #endif  // !CONFIG_H
