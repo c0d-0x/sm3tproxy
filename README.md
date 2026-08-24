@@ -35,7 +35,26 @@ sudo make run
 Or manually:
 
 ```bash
-sudo sg sm3tproxy bin/sm3tproxy
+
+#Usage:
+#  sm3tproxy [options]
+#
+#Options:
+#  -h, --help     Show help
+#  -v, --version  Print version
+#  -p, --port     Specify a local port to run proxy (default: 8080)
+#  -d, --debug    Show debug info
+#  -m, --mode     Specify proxy server mode (default: "TTCP")
+#   Mode:
+#        TTCP   - Transparent proxy mode
+#        TCP    - Forward proxy mode
+#        SOCKS5 - SOCKS5 proxy mode (No Backen yet)
+
+## Transparent TCP proxy
+sudo sg sm3tproxy bin/sm3tproxy -d
+
+## Transparent TCP proxy
+./bin/sm3tproxy -d -m TCP
 ```
 
 ### 5. Test

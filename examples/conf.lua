@@ -1,9 +1,19 @@
-local conf = {
+local send_json = function()
+	return [[
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 120
+
+{"current_weather":{"temperature":15.3,"windspeed":12.5,"winddirection":220,"weathercode":3,"time":"2026-01-09T12:00"}}
+]]
+end
+
+return {
 	sys = {
-		name = "",
-		user = "",
+		name = "c0d_0x.domain.com",
+		user = "c0d_0x",
 		group = "sm3tproxy",
-		chroot = "",
+		chroot = "/",
 		logging = {
 			level = 0,
 			format = 0,
@@ -18,7 +28,8 @@ local conf = {
 
 	tcp = {
 		listen = {
-			port = 8080,
+			mode = 2,
+			port = 65534,
 			address = "127.0.0.1",
 		},
 
@@ -28,40 +39,7 @@ local conf = {
 			ignored = false,
 		},
 
-		allow = {
-			src = {
-				cidrs = {},
-				ports = {},
-				cidrs_count = 0,
-				ports_count = 0,
-			},
-
-			dst = {
-				cidrs = {},
-				ports = {},
-				cidrs_count = 0,
-				ports_count = 0,
-			},
-		},
-
-		deny = {
-			src = {
-				cidrs = {},
-				ports = {},
-				cidrs_count = 0,
-				ports_count = 0,
-			},
-
-			dst = {
-				cidrs = {},
-				cidrs_count = 0,
-				ports = {},
-				ports_count = 0,
-			},
-		},
-
 		forward = {
-			mode = 0,
 			upstreams = {},
 			upstreams_count = 0,
 			failure_policy = {
@@ -100,6 +78,7 @@ local conf = {
 				interval_ms = 0,
 				count = 0,
 			},
+
 			nodelay = false,
 			reset_on_violation = false,
 		},
@@ -110,6 +89,7 @@ local conf = {
 				per_src = false,
 				per_dst = false,
 			},
+
 			log = {
 				src_ip = false,
 				src_port = false,
@@ -122,6 +102,29 @@ local conf = {
 			},
 		},
 	},
-}
 
-return conf
+	-- TODO: Will move hooks to proxy.on_**()
+	hooks = {
+		on_connect = function(ctx)
+			proxy.log("Hello I'm a ctx")
+			return true
+		end,
+
+		on_data = function(ctx, data, direction)
+			proxy.log("Hello I'm a ctx")
+			local addr = proxy.rhost(ctx)
+			local port = proxy.rport(ctx)
+			local msg = "data recieved from: " .. addr .. ":" .. port
+			proxy.log(msg)
+			if direction == 0 then
+				return send_json()
+			end
+			return nil
+		end,
+
+		on_disconnect = function(ctx)
+			proxy.log("Hello I'm a ctx and I don't like being droped :/")
+			return true
+		end,
+	},
+}

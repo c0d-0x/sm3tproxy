@@ -44,13 +44,16 @@ bool sm3t__view_starts_with(sm3t_view_t *view, sm3t_view_t *prefix);
 bool sm3t__view_eq(sm3t_view_t *viewa, sm3t_view_t *viewb);
 bool sm3t__view_empty(sm3t_view_t *view);
 
-bool sm3t__view_ends_with(sm3t_view_t *view, sm3t_view_t *suffix);
 int64_t sm3t__view_find(sm3t_view_t *view, sm3t_view_t *needle, int64_t start_offset);
 int64_t sm3t__view_find_char(sm3t_view_t *view, char c, int64_t start_offset);
+
+bool sm3t__view_ends_with(sm3t_view_t *view, sm3t_view_t *suffix);
 bool sm3t__view_split(sm3t_view_t *view, char delim, sm3t_view_t *left, sm3t_view_t *right);
+
 sm3t_view_t sm3t__view_trim(sm3t_view_t *view);
 sm3t_view_t sm3t__view_trim_left(sm3t_view_t *view);
 sm3t_view_t sm3t__view_trim_right(sm3t_view_t *view);
+
 bool sm3t__view_eq_case(sm3t_view_t *viewa, sm3t_view_t *viewb);
 bool sm3t__view_starts_with_case(sm3t_view_t *view, sm3t_view_t *prefix);
 bool sm3t__view_to_u32(sm3t_view_t *view, uint32_t *out);

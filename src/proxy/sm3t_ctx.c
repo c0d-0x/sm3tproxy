@@ -1,5 +1,6 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#include <lua.h>
 #endif
 
 #ifndef _POSIX_C_SOURCE
@@ -17,19 +18,22 @@
 #include <unistd.h>
 
 #include "logger.h"
+#include "sm3t_conf.h"
 #include "sm3t_core.h"
 #include "sm3t_proxy.h"
 
 // TODO: Config integration
 
-sm3t_context_t *sm3t__new_ctx() {
+sm3t_context_t *sm3t__new_ctx(lua_State *L) {
     sm3t_context_t *ctx = malloc(sizeof(sm3t_context_t) + SM3T_BUFFER_SIZE);
     if (ctx == NULL) SM3T__OUT_OF_MEMORY();
+    ctx->L = L;
     return ctx;
 }
 
 void sm3t__cleanup_ctx(void *context) {
     sm3t_context_t *ctx = (sm3t_context_t *) context;
+    sm3t__hook_on_disconnect(ctx->L, ctx);
     log_info("Connection dropped: %s:%04u", ctx->meta.addr, ctx->meta.port);
     if (ctx->fd > 0) close(ctx->fd);
     free(ctx);
@@ -58,10 +62,7 @@ void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_stor
 }
 
 // TCP context handler
-bool sm3t__tcp_ctx_handler(void *context, SM3T__MAYBE_UNUSED void *config, int epoll_fd) {
-    // TODO: Needs refactoring or a rewrite. Reallllly bulky :/
-    // NOTE: works for now, though :)
-
+bool sm3t__tcp_ctx_handler(lua_State *L, void *context, int epoll_fd) {
     if (context == NULL) return true;
     sm3t_context_t *ctx = (sm3t_context_t *) context;
     ssize_t n_recv = 0;
@@ -149,6 +150,13 @@ bool sm3t__tcp_ctx_handler(void *context, SM3T__MAYBE_UNUSED void *config, int e
             return false;
         }
 
+        sm3t_direction_t direction = (peer != NULL && peer->fd == fd_out) ? SM3T_CLI_UPS : SM3T_UPT_CLI;
+        if (sm3t__hook_on_data(L, ctx, &buff, &n_recv, direction) == SM3T_HOOK_DROP) {
+            if (ctx->peer != NULL) ctx->peer->peer = NULL;
+            ctx->peer = NULL;
+            return false;
+        }
+
         if ((n_sent = send(fd_out, buff, n_recv, 0)) == SM3T__ERR) {
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
                 memcpy(peer->buffer, buff, n_recv);
@@ -223,7 +231,7 @@ CHECK_HUP:
     return true;
 }
 
-bool sm3t__tcp_echo(void *context, SM3T__MAYBE_UNUSED void *config, SM3T__MAYBE_UNUSED int epoll_fd) {
+bool sm3t__tcp_echo(lua_State *L, void *context, SM3T__MAYBE_UNUSED int epoll_fd) {
     sm3t_context_t *ctx = (sm3t_context_t *) context;
     uint8_t *buf = ctx->buffer;
     if (ctx->events & EPOLLRDHUP) {
@@ -248,8 +256,7 @@ bool sm3t__tcp_echo(void *context, SM3T__MAYBE_UNUSED void *config, SM3T__MAYBE_
     return true;
 }
 
-bool sm3t__socks5__ctx_handler(SM3T__MAYBE_UNUSED void *context, SM3T__MAYBE_UNUSED void *config,
-                               SM3T__MAYBE_UNUSED int epoll_fd) {
+bool sm3t__socks5__ctx_handler(lua_State *L, SM3T__MAYBE_UNUSED void *context, SM3T__MAYBE_UNUSED int epoll_fd) {
     log_warn("SOCKS5 HANDLER NOT IMPLEMENTED");
     return false;
 }

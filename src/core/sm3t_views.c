@@ -1,6 +1,5 @@
 #include <sched.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -67,17 +66,14 @@ bool sm3t__view_ends_with(sm3t_view_t *view, sm3t_view_t *suffix) {
     return memcmp(view->data + offset, suffix->data, suffix->len) == 0;
 }
 
-int64_t sm3t__view_find(sm3t_view_t *view, sm3t_view_t *needle, int64_t start_offset) {
-    if (view == NULL || view->data == NULL || needle == NULL || needle->data == NULL) return SM3T_NOT_FOUND;
-    if (needle->len == 0) return start_offset <= view->len ? start_offset : SM3T_NOT_FOUND;
+int64_t sm3t__view_find(sm3t_view_t *view, sm3t_view_t *dlm, int64_t start_offset) {
+    if (view == NULL || view->data == NULL || dlm == NULL || dlm->data == NULL) return SM3T_NOT_FOUND;
+    if (dlm->len == 0) return start_offset <= view->len ? start_offset : SM3T_NOT_FOUND;
+    if (start_offset >= view->len || view->len - start_offset < dlm->len) return SM3T_NOT_FOUND;
 
-    if (start_offset >= view->len || view->len - start_offset < needle->len) return SM3T_NOT_FOUND;
-
-    int64_t search_limit = view->len - needle->len;
+    int64_t search_limit = view->len - dlm->len;
     for (int64_t i = start_offset; i <= search_limit; i++) {
-        if (memcmp(view->data + i, needle->data, needle->len) == 0) {
-            return i;
-        }
+        if (memcmp(view->data + i, dlm->data, dlm->len) == 0) return i;
     }
 
     return SM3T_NOT_FOUND;
@@ -87,9 +83,7 @@ int64_t sm3t__view_find_char(sm3t_view_t *view, char cc, int64_t start_offset) {
     if (view == NULL || view->data == NULL || start_offset >= view->len) return SM3T_NOT_FOUND;
 
     for (int64_t i = start_offset; i < view->len; i++) {
-        if (view->data[i] == cc) {
-            return i;
-        }
+        if (view->data[i] == cc) return i;
     }
 
     return SM3T_NOT_FOUND;
@@ -105,13 +99,9 @@ bool sm3t__view_split(sm3t_view_t *view, char delim, sm3t_view_t *left, sm3t_vie
         return false;
     }
 
-    int64_t right_offset = idx + 1;
     *left = (sm3t_view_t){.data = view->data, .len = idx};
-    if (right_offset >= view->len) {
-        *right = (sm3t_view_t){.data = NULL, .len = 0};
-    } else {
-        *right = (sm3t_view_t){.data = view->data + right_offset, .len = view->len - right_offset};
-    }
+    if (idx + 1 >= view->len) *right = (sm3t_view_t){.data = NULL, .len = 0};
+    else *right = (sm3t_view_t){.data = view->data + (idx + 1), .len = view->len - (idx + 1)};
 
     return true;
 }
@@ -147,7 +137,6 @@ bool sm3t__view_eq_case(sm3t_view_t *viewa, sm3t_view_t *viewb) {
 
     if (empty_a && empty_b) return true;
     if (empty_a || empty_b) return false;
-
     if (viewa->len != viewb->len) return false;
     for (int64_t i = 0; i < viewa->len; i++) {
         if (ascii_tolower(viewa->data[i]) != ascii_tolower(viewb->data[i])) return false;
@@ -184,13 +173,10 @@ bool sm3t__view_to_u32(sm3t_view_t *view, uint32_t *out) {
 }
 
 char *sm3t__view_to_cstr(sm3t_view_t *view) {
-    if (view == NULL || view->data == NULL || view->len == 0) {
-        return NULL;
-    }
+    if (view == NULL || view->data == NULL || view->len == 0) return NULL;
 
     char *dest = malloc(view->len + 1);
     if (dest == NULL) SM3T__OUT_OF_MEMORY();
-
     memcpy(dest, view->data, view->len);
     dest[view->len] = '\0';
     return dest;

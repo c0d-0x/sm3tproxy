@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <fcntl.h>
 #include <linux/netfilter_ipv4.h>
+#include <lua.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <pthread.h>
@@ -45,19 +46,20 @@ typedef struct sm3t_context_t {
     int wlen;
     int wstart;
     bool wpartial;
+    lua_State *L;
 
     uint8_t buffer[];
 } sm3t_context_t;
 
 bool sm3t__set_nonblocking(int fd);
-void sm3t__run_server(void *conf);
+void sm3t__run_server(lua_State *L);
 int sm3t__connect_upstream(struct sockaddr_storage *server_addr, char *ip, int port);
 void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage, bool debug);
 
-sm3t_context_t *sm3t__new_ctx(void);
+sm3t_context_t *sm3t__new_ctx(lua_State *L);
 void sm3t__cleanup_ctx(void *ctx);
-bool sm3t__tcp_ctx_handler(void *ctx, void *conf, int epoll_fd);
-bool sm3t__tcp_echo(void *ctx, void *conf, int epoll_fd);
-bool sm3t__socks5__ctx_handler(void *ctx, void *conf, int epoll_fd);
+bool sm3t__tcp_ctx_handler(lua_State *L, void *ctx, int epoll_fd);
+bool sm3t__tcp_echo(lua_State *L, void *ctx, int epoll_fd);
+bool sm3t__socks5__ctx_handler(lua_State *L, void *ctx, int epoll_fd);
 
 #endif  // !SM3T_PROXY_H

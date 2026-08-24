@@ -2,14 +2,14 @@ CC             = gcc
 
 CFLAGS         := -Wall -g -std=c23 -Wextra -Wformat-security -Wformat-overflow=2 -Wno-missing-braces
 LDLIBS         =  -lm -ldl -lpthread
-CFLAGS  += $(shell pkg-config --cflags luajit)
-LDLIBS  += $(shell pkg-config --libs luajit)
+CFLAGS  	   += $(shell pkg-config --cflags lua)
+LDLIBS		   += $(shell pkg-config --libs lua)
 # CFLAGS		   += -O3 -s # strip bin
 # Debugging params 
 CFLAGS		   += -ggdb
-CFLAGS 		   += -fsanitize=address
-CFLAGS 		   += -fno-omit-frame-pointer
-CFLAGS		   += -fsanitize-recover=address
+# CFLAGS 		   += -fsanitize=address
+# CFLAGS 		   += -fno-omit-frame-pointer
+# CFLAGS		   += -fsanitize-recover=address
 
 
 INCLUDE        := -Iinclude -Ilib
@@ -20,15 +20,15 @@ PROXY_SRC      := $(wildcard src/proxy/*.c)
 CORE_SRC       := $(wildcard src/core/*.c)
 CONF_SRC       := $(wildcard src/conf/*.c)
 LUA_SRC        := $(wildcard src/conf/lua/*.c)
-ALL_SRC        := $(SRC) $(PROXY_SRC) $(CORE_SRC) $(COR_SRC) $(LUA_SRC)
+ALL_SRC        := $(SRC) $(PROXY_SRC) $(CORE_SRC) $(CONF_SRC) $(LUA_SRC)
 
 OBJ            := $(ALL_SRC:src/%.c=build/%.o)
 
 NAT			   := ./nat.sh
 SETUP		   := setup
 CLEANUP		   := cleanup
-BIN            := bin/sm3tproxy
-BIN_DIR		   := bin
+BIN            := ./bin/sm3tproxy
+BIN_DIR		   := ./bin
 SET_GROUP      := sg
 SM3T_GROUP     := sm3tproxy
 
@@ -54,6 +54,8 @@ run-no-debug:
 	-@$(SET_GROUP) $(SM3T_GROUP) "$(BIN)"
 
 run:
+	-@$(BIN) -m TCP --debug
+run-transparent:
 	-@$(SET_GROUP) $(SM3T_GROUP) "$(BIN) --debug"
 	
 .PHONY:  test all clean install uninstall

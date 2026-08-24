@@ -5,8 +5,9 @@
 #include <lua.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "sm3t_proxy.h"
 
-typedef bool (*sm3t_ctx_handler_t)(void *, void *, int);
+typedef bool (*sm3t_ctx_handler_t)(lua_State *L, void *, int);
 
 typedef enum : uint8_t {
     SM3T__MODE_TRANSPARENT,
@@ -16,8 +17,8 @@ typedef enum : uint8_t {
 } sm3t_server_mode_t;
 
 typedef enum : uint8_t {
-    IPV4,
-    IPV6
+    SM3T__IPV4,
+    SM3T__IPV6
 } sm3t_addr_var_t;
 
 typedef enum : uint8_t {
@@ -39,9 +40,9 @@ typedef enum : uint8_t {
 } sm3t_log_out_t;
 
 typedef enum : uint8_t {
-    SM3T__ORIG_DST_REQUIRED,
-    SM3T__ORIG_DST_OPTIONAL,
-    SM3T__ORIG_DST_IGNORED
+    SM3T__ORIG_REQUIRED,
+    SM3T__ORIG_OPTIONAL,
+    SM3T__ORIG_IGNORED
 } sm3t_orig_dst_policy_t;
 
 typedef enum : uint8_t {
@@ -68,129 +69,44 @@ typedef struct {
     uint32_t weight;
 } sm3t_upstream_t;
 
-typedef struct {
-    // TODO: Very nested, more refactorn
-    sm3t_server_mode_t mode;
-    sm3t_ctx_handler_t ctx_vtable[SM3T__MODE_COUNT];
-    struct {
-        char *name;
-        char *user;
-        char *group;
-        char *chroot;
-        bool daemonize;
-        struct {
-            sm3t_log_level_t level;
-            sm3t_log_fmt_t format;
-            sm3t_log_out_t out;
-            char *file_path;
-        } logging;
-    } sys;
+typedef enum {
+    SM3T_CINT,
+    SM3T_CBOOL,
+    SM3T_CFLOAT,
+    SM3T_CSTRING,
+    SM3T_CTABLE,
+    SM3T_CFUNCTION,
+} sm3t_type_t;
 
-    struct {
-        struct {
-            char *address;
-            uint16_t port;
-        } listen;
+typedef union {
+    int64_t _int;
+    double _float;
+    bool _bool;
+    char *_string;
+} sm3t_value_t;
 
-        struct {
-            sm3t_orig_dst_policy_t policy;
-        } orig_dst;
+typedef enum {
+    SM3T_HOOK_PASS,
+    SM3T_HOOK_DROP
+} sm3t_hook_status_t;
 
-        struct {
-            struct {
-                char **cidrs;
-                size_t cidrs_count;
-                uint16_t *ports;
-                size_t ports_count;
-            } src;
+typedef enum {
+    SM3T_CLI_UPS,  // client to upstream
+    SM3T_UPT_CLI   // upstream to client
+} sm3t_direction_t;
 
-            struct {
-                char **cidrs;
-                size_t cidrs_count;
-                uint16_t *ports;
-                size_t ports_count;
-            } dst;
-        } allow;
+void sm3t__hook_on_disconnect(lua_State *L, sm3t_context_t *ctx);
+sm3t_hook_status_t sm3t__hook_on_connect(lua_State *L, sm3t_context_t *client_ctx);
+sm3t_hook_status_t sm3t__hook_on_data(lua_State *L, sm3t_context_t *ctx, uint8_t **buf, ssize_t *len,
+                                      sm3t_direction_t dir);
 
-        struct {
-            struct {
-                char **cidrs;
-                size_t cidrs_count;
-                uint16_t *ports;
-                size_t ports_count;
-            } src;
-
-            struct {
-                char **cidrs;
-                size_t cidrs_count;
-                uint16_t *ports;
-                size_t ports_count;
-            } dst;
-        } deny;
-
-        struct {
-            sm3t_forwarding_mode_t mode;
-            sm3t_upstream_t *upstreams;
-            size_t upstreams_count;
-            sm3t_failure_policy_t failure_policy;
-        } forward;
-
-        struct {
-            struct {
-                uint32_t max_total;
-                uint32_t max_per_src;
-            } limit;
-
-            struct {
-                uint32_t connect_ms;
-                uint32_t idle_ms;
-                uint32_t lifetime_ms;
-            } timeout;
-
-            struct {
-                bool enable;
-                uint8_t max;
-                uint32_t backoff_ms;
-            } retries;
-        } conn;
-
-        struct {
-            sm3t_backpressure_policy_t backpressure;
-        } flow_control;
-
-        struct {
-            struct {
-                bool enable;
-                uint32_t idle_ms;
-                uint32_t interval_ms;
-                uint8_t count;
-            } keepalive;
-            bool nodelay;
-            bool reset_on_violation;
-        } transport;
-
-        struct {
-            bool enable;
-            struct {
-                bool per_src;
-                bool per_dst;
-            } metrics;
-
-            struct {
-                bool src_ip;
-                bool src_port;
-                bool dst_ip;
-                bool dst_port;
-                bool bytes_in;
-                bool bytes_out;
-                bool duration;
-                bool err;
-            } log;
-        } telemetry;
-    } tcp;
-} sm3t_conf_t;
-
-lua_State *sm3t__parse_conf(char *path);
-bool sm3t__reload_conf(lua_State *L);
-sm3t_conf_t *sm3t_cleanup_conf(lua_State *L);
+void sm3t__register_api(lua_State *L);
+lua_State *sm3t__init_conf(const char *path);
+bool sm3t__reload_conf(lua_State **L, const char *path);
+lua_State *sm3t__load_conf(const char *path);
+bool sm3t__parse_conf(lua_State *l);
+bool sm3t__lua_ctype(lua_State *L, const char *field, sm3t_type_t type, sm3t_value_t *out);
+bool sm3t__get_conf_value(lua_State *L, const char *path, sm3t_type_t type, sm3t_value_t *out);
+bool sm3t__set_conf_value(lua_State *L, const char *path, sm3t_type_t type, sm3t_value_t *in);
+void sm3t__cleanup_conf(lua_State **L);
 #endif  // !CONFIG_H
