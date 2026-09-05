@@ -41,14 +41,14 @@
 #define ROOT_HANDLER 0
 #define ROOT_HANDLER_NAME "root"
 #define DEFAULT NULL
-#define DEFAULT_LEVEL LOG_INFO
+#define DEFAULT_LEVEL LOG_TRACE
 #define DEFAULT_STRAEM stderr
 #define DEFAULT_FILE_NAME "logger/program.log"
 #define DEFAULT_FILE_MODE "a"
 #define DEFAULT_DATE_FORMAT1 "%H:%M:%S"                  // HH:MM:SS
-#define DEFAULT_DATE_FORMAT2 "%Y-%m-%d"                  // YYYY-MM-DD
-#define DEFAULT_DATE_FORMAT3 "%Y/%m/%d %H:%M:%S"         // YYYY/MM/DD HH:MM:SS
-#define DEFAULT_DATE_FORMAT4 "%Y-%m-%d %H:%M:%S"         // YYYY-MM-DD HH:MM:SS
+#define DEFAULT_DATE_FORMAT2 "%d-%m-%Y"                  // DD-MM-YYYY
+#define DEFAULT_DATE_FORMAT3 "%d/%m/%Y %H:%M:%S"         // DD/MM/YYYY HH:MM:SS
+#define DEFAULT_DATE_FORMAT4 "%d-%m-%Y %H:%M:%S"         // DD-MM-YYYY HH:MM:SS
 #define DEFAULT_DATE_FORMAT8 "%a, %d %b %Y %H:%M:%S %z"  // RFC 2822
 #define DEFAULT_DATE_FORMAT9 "%Y-%m-%dT%H:%M:%S%z"       // ISO 8601
 
@@ -92,6 +92,7 @@ struct handler {
     const char *date_fmt;
 };
 
+void init_logger(const char *date_fmt, bool quiet);
 int log_add_file_handler(const char *filename, const char *filemode, uint8_t level, const char *name);
 int log_add_stream_handler(FILE *fp, uint8_t level, const char *name);
 
@@ -174,15 +175,15 @@ void log_set_lock(log_LockFn fn, void *fp) {
     L.handlers[0].fp = fp;
 }
 
-__attribute__((constructor)) static void init_logger(void) {
+void init_logger(const char *date_fmt, bool quiet) {
     L.handlers[ROOT_HANDLER] = (log_handler_t) {
         .name = ROOT_HANDLER_NAME,
         .dump_fn = dump_log,
         .fmt_fn = color_fmt1,
         .fp = DEFAULT_STRAEM,
-        .level = LOG_INFO,
-        .quiet = false,
-        .date_fmt = DEFAULT_DATE_FORMAT3,
+        .level = DEFAULT_LEVEL,
+        .quiet = quiet,
+        .date_fmt = date_fmt,
     };
     L.count = 1;
 }
@@ -258,7 +259,7 @@ void _log_message(uint8_t level, const char *file, int line, const char *msg_fmt
 
     for (size_t i = ROOT_HANDLER + 1; i < L.count && L.handlers[i].dump_fn; i++) {
         log_handler_t *hd = &L.handlers[i];
-        if (!hd->quiet && level >= hd->level) {
+        if (!hd->quiet && level == hd->level) {
             update_record(&rec, hd);
             va_start(rec.ap, msg_fmt);
             hd->dump_fn(&rec);
@@ -288,8 +289,8 @@ void _log_set_attribute(const char *name, const char *member, size_t offset, siz
 }
 
 void dump_log(record_t *rec) {
-    char time_buf[32];
-    time_buf[strftime(time_buf, sizeof(time_buf), rec->hd_date_fmt, rec->time)] = '\0';
+    char time_buf[32] = {0};
+    strftime(time_buf, sizeof(time_buf), rec->hd_date_fmt, rec->time);
     rec->hd_fmt_fn(rec, time_buf);
     vfprintf(rec->hd_fp, rec->msg_fmt, rec->ap);
     fprintf(rec->hd_fp, "\n");
@@ -308,8 +309,8 @@ void color_fmt2(record_t *rec, const char *time_buf) {
 }
 
 void no_color_fmt1(record_t *rec, const char *time_buf) {
-    static const char *fmt = "%s %-5s [%s:%d]: ";
-    fprintf(rec->hd_fp, fmt, time_buf, level_strings[rec->level], rec->file, rec->line);
+    static const char *fmt = "%s %-5s ";
+    fprintf(rec->hd_fp, fmt, time_buf, level_strings[rec->level]);
 }
 
 void no_color_fmt2(record_t *rec, const char *time_buf) {

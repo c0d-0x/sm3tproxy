@@ -78,14 +78,45 @@ const sm3t_conf_node_t sys_tab[] = {
 
 bool verify_port(sm3t_value_t *port, sm3t_type_t type) {
     if (type != SM3T_CINT) return false;
-    if (port->_int > UINT16_MAX || port->_int <= 0) return false;
+    if (port->as._int > UINT16_MAX || port->as._int <= 0) return false;
 
     return true;
 }
 
 bool verify_mode(sm3t_value_t *mode, sm3t_type_t type) {
-    if (mode->_int >= SM3T__MODE_COUNT || mode->_int < 0) return false;
+    if (type != SM3T_CINT) return false;
+    if (mode->as._int >= SM3T__MODE_COUNT || mode->as._int < 0) return false;
+
     return true;
+}
+
+bool verify_failure_policy(sm3t_value_t *policy, sm3t_type_t type) {
+    if (type != SM3T_CINT) return false;
+    switch (policy->as._int) {
+        case SM3T__FAILURE_RESET:
+        case SM3T__FAILURE_DROP:
+        case SM3T__FAILURE_BYPASS: return true;
+        default:                   return false;
+    }
+}
+
+bool verify_dst_policy(sm3t_value_t *policy, sm3t_type_t type) {
+    if (type != SM3T_CINT) return false;
+    switch (policy->as._int) {
+        case SM3T__ORIG_REQUIRED:
+        case SM3T__ORIG_OPTIONAL:
+        case SM3T__ORIG_IGNORED:  return true;
+        default:                  return false;
+    }
+}
+
+bool verify_backpressure_policy(sm3t_value_t *backpressure, sm3t_type_t type) {
+    if (type != SM3T_CINT) return false;
+    switch (backpressure->as._int) {
+        case SM3T__BACKPRESSURE_CLOSE:
+        case SM3T__BACKPRESSURE_STALL: return true;
+        default:                       return false;
+    }
 }
 
 const sm3t_conf_node_t listen_tab[] = {
@@ -95,24 +126,18 @@ const sm3t_conf_node_t listen_tab[] = {
     SM3T__TERMINATING_NODE,
 };
 
-const sm3t_conf_node_t orig_dst_tab[] = {
-    SM3T__NEW_NODE("required", SM3T_CBOOL),
-    SM3T__NEW_NODE("optional", SM3T_CBOOL),
-    SM3T__NEW_NODE("ignored", SM3T_CBOOL),
-    SM3T__TERMINATING_NODE,
-};
-
-const sm3t_conf_node_t failure_policy_tab[] = {
-    SM3T__NEW_NODE("drop", SM3T_CBOOL),
-    SM3T__NEW_NODE("reset", SM3T_CBOOL),
-    SM3T__NEW_NODE("bypass", SM3T_CBOOL),
-    SM3T__TERMINATING_NODE,
+// TODO: validatn later
+const sm3t_conf_node_t upstream[] = {
+    SM3T__NEW_NODE("name", SM3T_CSTRING),
+    SM3T__NEW_NODE("ver", SM3T_CINT),
+    SM3T__NEW_NODE("address", SM3T_CSTRING),
+    SM3T__NEW_NODE("port", SM3T_CINT),
 };
 
 const sm3t_conf_node_t forward_tab[] = {
     SM3T__NEW_NODE("upstreams", SM3T_CTABLE),
     SM3T__NEW_NODE("upstreams_count", SM3T_CINT),
-    SM3T__NEW_NODE("failure_policy", SM3T_CTABLE, ._child = failure_policy_tab),
+    SM3T__NEW_NODE("failure_policy", SM3T_CINT, .value_validator = verify_failure_policy),
     SM3T__TERMINATING_NODE,
 };
 
@@ -140,12 +165,6 @@ const sm3t_conf_node_t conn_tab[] = {
     SM3T__NEW_NODE("limit", SM3T_CTABLE, ._child = limit_tab),
     SM3T__NEW_NODE("timeout", SM3T_CTABLE, ._child = timeout_tab),
     SM3T__NEW_NODE("retries", SM3T_CTABLE, ._child = retries_tab),
-    SM3T__TERMINATING_NODE,
-};
-
-const sm3t_conf_node_t flow_control_tab[] = {
-    SM3T__NEW_NODE("backpressure_stall", SM3T_CBOOL),
-    SM3T__NEW_NODE("backpressure_close", SM3T_CBOOL),
     SM3T__TERMINATING_NODE,
 };
 
@@ -198,10 +217,10 @@ const sm3t_conf_node_t telemetry_tab[] = {
 
 const sm3t_conf_node_t tcp_tab[] = {
     SM3T__NEW_NODE("listen", SM3T_CTABLE, ._child = listen_tab),
-    SM3T__NEW_NODE("orig_dst", SM3T_CTABLE, ._child = orig_dst_tab),
+    SM3T__NEW_NODE("orig_dst", SM3T_CINT, .value_validator = verify_dst_policy),
     SM3T__NEW_NODE("forward", SM3T_CTABLE, ._child = forward_tab),
     SM3T__NEW_NODE("conn", SM3T_CTABLE, ._child = conn_tab),
-    SM3T__NEW_NODE("flow_control", SM3T_CTABLE, ._child = flow_control_tab),
+    SM3T__NEW_NODE("backpresure", SM3T_CINT, .value_validator = verify_backpressure_policy),
     SM3T__NEW_NODE("transport", SM3T_CTABLE, ._child = transport_tab),
     SM3T__NEW_NODE("telemetry", SM3T_CTABLE, ._child = telemetry_tab),
     SM3T__TERMINATING_NODE,
@@ -242,8 +261,8 @@ static bool validate_tab_node(lua_State *L, int index, const sm3t_conf_node_t *t
 
                 if (node->value_validator != NULL) {
                     sm3t_value_t value = (node->_type == SM3T_CINT)
-                                             ? (sm3t_value_t){._int = (int64_t) lua_tonumber(L, -1)}
-                                             : (sm3t_value_t){._float = (float) lua_tonumber(L, -1)};
+                                             ? (sm3t_value_t){.as._int = (int64_t) lua_tonumber(L, -1)}
+                                             : (sm3t_value_t){.as._float = (float) lua_tonumber(L, -1)};
                     if (!node->value_validator(&value, node->_type)) valid = false;
                 }
                 break;
@@ -258,7 +277,7 @@ static bool validate_tab_node(lua_State *L, int index, const sm3t_conf_node_t *t
                 };
 
                 if (node->value_validator != NULL) {
-                    sm3t_value_t value = {._string = (char *) lua_tostring(L, -1)};
+                    sm3t_value_t value = {.as._string = (char *) lua_tostring(L, -1)};
                     if (!node->value_validator(&value, SM3T_CSTRING)) valid = false;
                 }
                 break;
@@ -308,17 +327,17 @@ bool sm3t__lua_ctype(lua_State *L, const char *field, sm3t_type_t type, sm3t_val
                 return false;
             }
 
-            if ((out->_string = malloc(sizeof(char) * len + 1)) == NULL) SM3T__OUT_OF_MEMORY();
+            if ((out->as._string = malloc(sizeof(char) * len + 1)) == NULL) SM3T__OUT_OF_MEMORY();
             const char *luastr = lua_tostring(L, -1);
             if (luastr == NULL) {
                 log_error("[LUA] Field: %s, lua_tostring returned NULL", field);
-                free(out->_string);
-                out->_string = NULL;
+                free(out->as._string);
+                out->as._string = NULL;
                 return false;
             }
 
-            memcpy(out->_string, luastr, len);
-            out->_string[len] = '\0';
+            memcpy(out->as._string, luastr, len);
+            out->as._string[len] = '\0';
             lua_pop(L, 1);
             break;
 
@@ -328,7 +347,7 @@ bool sm3t__lua_ctype(lua_State *L, const char *field, sm3t_type_t type, sm3t_val
                 return false;
             }
 
-            out->_bool = lua_toboolean(L, -1);
+            out->as._bool = lua_toboolean(L, -1);
             lua_pop(L, 1);
             break;
 
@@ -341,8 +360,8 @@ bool sm3t__lua_ctype(lua_State *L, const char *field, sm3t_type_t type, sm3t_val
             }
 
             lua_Number num = lua_tonumber(L, -1);
-            if (type == SM3T_CINT) out->_int = (int64_t) num;
-            if (type == SM3T_CFLOAT) out->_float = (double) num;
+            if (type == SM3T_CINT) out->as._int = (int64_t) num;
+            if (type == SM3T_CFLOAT) out->as._float = (double) num;
             lua_pop(L, 1);
     }
 

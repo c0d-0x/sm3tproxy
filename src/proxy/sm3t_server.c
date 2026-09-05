@@ -49,8 +49,7 @@ static void sm3t__close_server(sm3t_server_t *server) {
 
 // NOTE: for test only
 static sm3t_upstream_t domains[] = {
-    {.name = "localhost", .ver = SM3T__IPV4, .address = "127.0.0.1", .port = 4000},
-    {.name = "localhost", .ver = SM3T__IPV4, .address = "127.0.0.1", .port = 3000}
+    {.name = "localhost", .ver = SM3T__IPV4, .address = "127.0.0.1", .port = 6600},
 };
 
 static sm3t_server_t *sm3t__init_server(lua_State *L) {
@@ -63,12 +62,12 @@ static sm3t_server_t *sm3t__init_server(lua_State *L) {
     int status = SM3T__ERR;
 
     if (!sm3t__get_conf_value(L, "tcp.listen.port", SM3T_CINT, &out)) return NULL;
-    if (out._int > INT16_MAX || out._int <= 0) {
+    if (out.as._int > UINT16_MAX || out.as._int <= 0) {
         log_error("invalid port number");
         return NULL;
     }
 
-    sprintf(port, "%d", (uint16_t) out._int);
+    sprintf(port, "%d", (uint16_t) out.as._int);
     hint.ai_family = AF_INET;
     hint.ai_socktype = SOCK_STREAM;
     hint.ai_flags = AI_PASSIVE;
@@ -87,7 +86,7 @@ static sm3t_server_t *sm3t__init_server(lua_State *L) {
         }
 
         if (!sm3t__get_conf_value(L, "tcp.listen.mode", SM3T_CINT, &out)) return NULL;
-        if (out._int == SM3T__MODE_TRANSPARENT) {
+        if (out.as._int == SM3T__MODE_TRANSPARENT) {
             if (setsockopt(sock, SOL_IP, IP_TRANSPARENT, &(int){1}, sizeof(int)) == SM3T__ERR) {
                 log_error("Failed to make socket transparent: %s", strerror(errno));
                 close(sock);
@@ -145,6 +144,7 @@ static sm3t_server_t *sm3t__init_server(lua_State *L) {
         return NULL;
     }
 
+    log_debug("Server initised");
     return server;
 }
 
@@ -169,7 +169,8 @@ int sm3t__connect_upstream(struct sockaddr_storage *server_addr, char *ip, int p
 void sm3t__run_server(lua_State *L) {
     if (L == NULL) return;
 
-    sm3t_value_t out_from_lua = {};
+    sm3t_value_t from_lua = {};
+    log_debug("Preparing to initiate server");
     sm3t_server_t *server = sm3t__init_server(L);
     if (server == NULL) return;
 
@@ -191,16 +192,13 @@ void sm3t__run_server(lua_State *L) {
     sm3t_upstream_t *upstream = NULL;
     sm3t_queue_t *forward_domains = NULL;
     struct epoll_event ev_list[SM3T_MAX_EVENT] = {};
-    if (!sm3t__get_conf_value(L, "tcp.listen.mode", SM3T_CINT, &out_from_lua)) return;
-    sm3t_server_mode_t mode = out_from_lua._int;
+    if (!sm3t__get_conf_value(L, "tcp.listen.mode", SM3T_CINT, &from_lua)) return;
+    sm3t_server_mode_t mode = from_lua.as._int;
 
     if (mode == SM3T__MODE_FORWARD) {
-        if (!sm3t__get_conf_value(L, "tcp.forward.upstreams_count", SM3T_CINT, &out_from_lua)) return;
-        int count = out_from_lua._int;
-        for (int i = 0; i < 2; i++) {
-            sm3t__enqueue(&forward_domains, domains);  // TODO: fetch upstream_addrs
-            count++;
-        }
+        // if (!sm3t__get_conf_value(L, "tcp.forward.upstreams_count", SM3T_CINT, &out_from_lua)) return;
+        // int count = out_from_lua.as._int;
+        sm3t__enqueue(&forward_domains, (void *) &domains[0]);  // TODO: fetch upstream_addrs
     }
 
     log_info("SM3TPROXY RUNNING ON: %s:%04u", server->meta.addr, server->meta.port);
@@ -230,7 +228,7 @@ void sm3t__run_server(lua_State *L) {
                     continue;
                 }
 
-                sm3t__set_peer_meta(client_ctx, &client_addr, true);
+                sm3t__set_peer_meta(client_ctx, &client_addr);
                 log_info("New client connection: %s:%u", client_ctx->meta.addr, client_ctx->meta.port);
 
                 if (sm3t__hook_on_connect(L, client_ctx) == SM3T_HOOK_DROP) {
@@ -302,9 +300,7 @@ void sm3t__run_server(lua_State *L) {
                         continue;
                 }
 
-                if (!sm3t__get_conf_value(L, "tcp.telemetry.enable", SM3T_CBOOL, &out_from_lua)) return;
-                bool enable_telem = out_from_lua._bool;
-                sm3t__set_peer_meta(upstream_ctx, &upstream_addr, enable_telem);
+                sm3t__set_peer_meta(upstream_ctx, &upstream_addr);
                 upstream_ctx->fd
                     = sm3t__connect_upstream(&upstream_addr, upstream_ctx->meta.addr, upstream_ctx->meta.port);
                 if (upstream_ctx->fd == SM3T__ERR) {

@@ -10,7 +10,7 @@ end
 
 return {
 	sys = {
-		name = "c0d_0x.domain.com",
+		name = "c0d_0x.domain",
 		user = "c0d_0x",
 		group = "sm3tproxy",
 		chroot = "/",
@@ -27,26 +27,20 @@ return {
 	},
 
 	tcp = {
+		orig_dst = 1,
+		backpressure = 0,
 		listen = {
 			mode = 2,
-			port = 65534,
+			port = 6969,
 			address = "127.0.0.1",
 		},
 
-		orig_dst = {
-			required = false,
-			optional = false,
-			ignored = false,
-		},
-
 		forward = {
-			upstreams = {},
-			upstreams_count = 0,
-			failure_policy = {
-				drop = false,
-				reset = false,
-				bypass = false,
+			upstreams = {
+				{ name = "localhost", ver = 4, address = "127.0.0.1", port = 6600 },
 			},
+			upstreams_count = 1,
+			failure_policy = 0,
 		},
 
 		conn = {
@@ -54,21 +48,18 @@ return {
 				max_total = 0,
 				max_per_src = 0,
 			},
+
 			timeout = {
 				connect_ms = 0,
 				idle_ms = 0,
 				lifetime_ms = 0,
 			},
+
 			retries = {
 				enable = false,
 				max = 0,
 				backoff_ms = 0,
 			},
-		},
-
-		flow_control = {
-			backpressure_stall = false,
-			backpressure_close = false,
 		},
 
 		transport = {
@@ -106,24 +97,29 @@ return {
 	-- TODO: Will move hooks to proxy.on_**()
 	hooks = {
 		on_connect = function(ctx)
-			proxy.log("Hello I'm a ctx")
+			local addr = proxy.rhost(ctx)
+			local port = proxy.rport(ctx)
+
+			local msg = "New Context: " .. addr .. ":" .. port
+			proxy.log(msg)
 			return true
 		end,
 
 		on_data = function(ctx, data, direction)
-			proxy.log("Hello I'm a ctx")
 			local addr = proxy.rhost(ctx)
 			local port = proxy.rport(ctx)
+
 			local msg = "data recieved from: " .. addr .. ":" .. port
 			proxy.log(msg)
-			if direction == 0 then
-				return send_json()
-			end
-			return nil
+			return data
 		end,
 
 		on_disconnect = function(ctx)
-			proxy.log("Hello I'm a ctx and I don't like being droped :/")
+			local addr = proxy.rhost(ctx)
+			local port = proxy.rport(ctx)
+			local msg = "context dropped: " .. addr .. ":" .. port
+
+			proxy.log(msg)
 			return true
 		end,
 	},

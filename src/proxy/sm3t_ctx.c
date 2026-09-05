@@ -1,6 +1,5 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
-#include <lua.h>
 #endif
 
 #ifndef _POSIX_C_SOURCE
@@ -8,6 +7,7 @@
 #endif
 
 #include <errno.h>
+#include <lua.h>
 #include <netinet/in.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -39,16 +39,20 @@ void sm3t__cleanup_ctx(void *context) {
     free(ctx);
 }
 
-void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage, bool debug) {
+void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage) {
     struct sockaddr_in6 *addr6_nt = NULL;
     struct sockaddr_in *addr_nt = NULL;
+    sm3t_value_t from_lua = {0};
+
+    if (!sm3t__get_conf_value(ctx->L, "tcp.telemetry.enable", SM3T_CBOOL, &from_lua)) return;
+    bool debug = from_lua.as._bool;
 
     if (addr_storage->ss_family == AF_INET6) addr6_nt = (struct sockaddr_in6 *) addr_storage;
     else addr_nt = (struct sockaddr_in *) addr_storage;
 
     // TODO: Move do display logic in loger instead
     if (!debug) {
-        strcpy(ctx->meta.addr, "<<IP>> ");
+        ctx->meta.addr[0] = '\0';
         ctx->meta.port = 0x00;
         return;
     }
@@ -114,9 +118,7 @@ bool sm3t__tcp_ctx_handler(lua_State *L, void *context, int epoll_fd) {
             if (peer != NULL) {
                 struct epoll_event ev_peer = {.events = EPOLLIN | EPOLLRDHUP, .data.ptr = peer};
                 sm3t_modify_poll(&epoll_fd, peer->fd, &ev_peer);
-            } else {
-                return false;
-            }
+            } else return false;
 
             log_info("Queued data sent %s:%04u", address, port);
         }

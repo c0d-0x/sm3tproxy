@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+
 #include "sm3t_core.h"
 #include "sm3t_utils.h"
 

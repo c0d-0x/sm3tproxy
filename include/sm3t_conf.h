@@ -51,14 +51,14 @@ typedef enum : uint8_t {
 } sm3t_forwarding_mode_t;
 
 typedef enum : uint8_t {
-    SM3T__FAILURE_DROP,
     SM3T__FAILURE_RESET,
+    SM3T__FAILURE_DROP,
     SM3T__FAILURE_BYPASS
 } sm3t_failure_policy_t;
 
 typedef enum : uint8_t {
-    SM3T__BACKPRESSURE_STALL,
-    SM3T__BACKPRESSURE_CLOSE
+    SM3T__BACKPRESSURE_CLOSE,
+    SM3T__BACKPRESSURE_STALL
 } sm3t_backpressure_policy_t;
 
 typedef struct {
@@ -78,11 +78,13 @@ typedef enum {
     SM3T_CFUNCTION,
 } sm3t_type_t;
 
-typedef union {
-    int64_t _int;
-    double _float;
-    bool _bool;
-    char *_string;
+typedef struct {
+    union {
+        int64_t _int;
+        double _float;
+        bool _bool;
+        char *_string;
+    } as;
 } sm3t_value_t;
 
 typedef enum {

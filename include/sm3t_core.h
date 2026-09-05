@@ -5,7 +5,6 @@
 #include <sys/epoll.h>
 
 #define SM3T_VERSION "v1.0.0"
-
 #define SM3T__FATAL(...)              \
     do {                              \
         fprintf(stderr, "ERROR: ");   \

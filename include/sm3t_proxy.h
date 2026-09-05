@@ -54,7 +54,7 @@ typedef struct sm3t_context_t {
 bool sm3t__set_nonblocking(int fd);
 void sm3t__run_server(lua_State *L);
 int sm3t__connect_upstream(struct sockaddr_storage *server_addr, char *ip, int port);
-void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage, bool debug);
+void sm3t__set_peer_meta(sm3t_context_t *ctx, struct sockaddr_storage *addr_storage);
 
 sm3t_context_t *sm3t__new_ctx(lua_State *L);
 void sm3t__cleanup_ctx(void *ctx);

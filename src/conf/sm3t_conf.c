@@ -48,9 +48,7 @@ void sm3t__cleanup_conf(lua_State **L) {
 
 lua_State *sm3t__init_conf(const char *path) {
     lua_State *L = NULL;
-    if ((L = sm3t__load_conf(path)) == NULL) {
-        return NULL;
-    }
+    if ((L = sm3t__load_conf(path)) == NULL) return NULL;
 
     sm3t__sandbox(L);
     if (lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
